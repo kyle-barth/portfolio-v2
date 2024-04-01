@@ -1,5 +1,6 @@
 "use client";
 
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   IconArrowDown,
   IconArrowLeft,
@@ -14,13 +15,13 @@ import NavLink from "./link";
 export default function SideNav() {
   const [onMount, setOnMount] = useState(false);
   const [isOpen, setOpen] = useState(true);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     setOnMount(true);
   }, []);
 
   if (onMount) {
-    const isMobile = window.innerWidth < 640;
     const initial = isMobile ? { y: "100vh" } : { x: "-100vw" };
 
     const toggleSideNav = () => {
@@ -35,7 +36,7 @@ export default function SideNav() {
               <motion.span
                 className="absolute top-10 gap-2 mx-auto flex backdrop-filter backdrop-blur-md py-2 px-4 rounded-lg ring-4 ring-white"
                 initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                animate={{ opacity: 1, transition: { delay: 1 } }}
                 exit={{ opacity: 0 }}
               >
                 <IconInfoCircle />
@@ -54,8 +55,7 @@ export default function SideNav() {
               animate={{ x: 0, y: 0 }}
               transition={{
                 duration: 0.8,
-                initialDelay: 1,
-                ease: [0, 0.71, 0.2, 1.01],
+                ease: "easeInOut",
               }}
             >
               <button
@@ -87,7 +87,7 @@ export default function SideNav() {
             <div className="w-full flex justify-center">
               <motion.button
                 initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                animate={{ opacity: 1, transition: { delay: 0.5 } }}
                 exit={{ opacity: 0 }}
                 className="absolute bottom-0 sm:bottom-auto sm:top-0 sm:left-0 p-4 z-10"
                 onClick={toggleSideNav}
