@@ -1,7 +1,6 @@
 import Container from "@/components/container";
 import Link from "@/components/link";
 import PortfolioCard from "@/components/portfolio-card";
-import { spacing } from "@/constants/spacing";
 
 export default function PortfolioPage() {
   return (
@@ -10,7 +9,7 @@ export default function PortfolioPage() {
         <Link url="/home" text="home" />
       </nav>
 
-      <main className={"flex flex-col" + " " + spacing}>
+      <main className={"flex flex-col gap-4"}>
         <h1 className="text-4xl font-bold">Portfolio</h1>
         <p>
           Side projects are a great way to learn new technologies and keep your
@@ -21,7 +20,7 @@ export default function PortfolioPage() {
           Here are some of my recent projects I&apos;ve made to stay up to date.
         </p>
 
-        <section className={"grid-cols-1 sm:grid-cols-2 grid" + " " + spacing}>
+        <section className={"grid-cols-1 sm:grid-cols-2 grid gap-4"}>
           <PortfolioCard
             linkUrl="https://resippy.vercel.app/"
             imgUrl="/resippy.png"

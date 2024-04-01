@@ -1,6 +1,5 @@
 "use client";
 
-import { spacing } from "@/constants/spacing";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   IconArrowDown,
@@ -74,7 +73,7 @@ export default function SideNav() {
                   </p>
                 </div>
 
-                <nav className={"flex flex-col sm:gap-0" + " " + spacing}>
+                <nav className={"gap-4 sm:gap-0 flex flex-col"}>
                   <NavLink url="/about" text="about" />
                   <NavLink url="/portfolio" text="portfolio" />
                 </nav>
