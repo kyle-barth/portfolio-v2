@@ -10,9 +10,7 @@ export const employmentHistory = [
                 Basket giving a high-risk area of development limited blast
                 radius, configured synthetic tests for alerting developers of
                 Production Issues and shaped our development practices with our
-                testing strategies. Tech: NextJS, TypeScript, Jest, React Testing
-                Library, Playwright, GraphQL, StoryBook, Optimizely, NewRelic,
-                PagerDuty.`,
+                testing strategies.`,
     tech: "NextJS, TypeScript, Jest, React Testing Library, Playwright, GraphQL, StoryBook, Optimizely, NewRelic, PagerDuty",
   },
   {
