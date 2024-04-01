@@ -14,9 +14,9 @@ export default function PortfolioPage() {
         <p>
           Side projects are a great way to learn new technologies and keep your
           skills up to date, in web dev the whole stack changes every few years
-          so it's worth doing.
+          so it&apos;s worth doing.
         </p>
-        <p>Here are some of my recent projects I've made to stay up to date.</p>
+        <p>Here are some of my recent projects I&apos;ve made to stay up to date.</p>
 
         <div className="grid-cols-1 sm:grid-cols-2 grid gap-4">
           <a
@@ -36,7 +36,7 @@ export default function PortfolioPage() {
               <h1 className="text-xl font-bold">resippy</h1>
               <p>
                 A recipe app I made for my own usage. Not as quick as using a
-                notepad though so I don't update it that often...
+                notepad though so I don&apos;t update it that often...
               </p>
               <p className="text-slate-400 text-xs italic">
                 Tech: SvelteKit, TailwindCSS, Vercel.

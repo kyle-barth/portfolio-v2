@@ -33,7 +33,7 @@ export default function SideNav() {
           <div className="flex flex-col gap-6">
             <h1 className="text-4xl font-extrabold">Welcome! 👋🏻</h1>
             <p>
-              I'm Kyle, a senior web dev with 7+ years experience in Software
+              I&apos;m Kyle, a senior web dev with 7+ years experience in Software
               Development.
             </p>
           </div>
