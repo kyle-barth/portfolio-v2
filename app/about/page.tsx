@@ -18,8 +18,12 @@ export default function AboutPage() {
           Development. My expertise lies in providing technical guidance,
           automated testing infrastructure, experimentation, and alerting.{" "}
         </p>
-        <span className="self-end">
+        <span className="self-end flex gap-4">
           <Link url="https://www.linkedin.com/in/kyle-barth/" text="LinkedIn" />
+          <Link
+            url="https://github.com/kyle-barth/"
+            text="GitHub"
+          />
         </span>
 
         <section className={"flex flex-col" + " " + spacing}>

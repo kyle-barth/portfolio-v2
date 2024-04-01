@@ -2,6 +2,7 @@ import Container from "@/components/container";
 import Link from "@/components/link";
 import Image from "next/image";
 import { spacing } from "@/constants/spacing";
+import PortfolioCard from "@/components/portfolio-card";
 
 export default function PortfolioPage() {
   return (
@@ -9,6 +10,7 @@ export default function PortfolioPage() {
       <nav>
         <Link url="/home" text="home" />
       </nav>
+
       <main className={"flex flex-col" + " " + spacing}>
         <h1 className="text-4xl font-bold">About</h1>
         <p>
@@ -16,36 +18,56 @@ export default function PortfolioPage() {
           skills up to date, in web dev the whole stack changes every few years
           so it&apos;s worth doing.
         </p>
-        <p>Here are some of my recent projects I&apos;ve made to stay up to date.</p>
+        <p>
+          Here are some of my recent projects I&apos;ve made to stay up to date.
+        </p>
 
-        <div className="grid-cols-1 sm:grid-cols-2 grid gap-4">
-          <a
-            className="transition-all hover:scale-105"
-            href="https://resippy.vercel.app/"
-          >
-            <div className="h-40 w-full relative">
-              <Image
-                src="/resippy.png"
-                alt="Picture of the author"
-                layout="fill"
-                objectFit="cover"
-                className="rounded-t-lg"
-              />
-            </div>
-            <div className="h-44 bg-slate-900 rounded-b-lg p-4 flex flex-col justify-between">
-              <h1 className="text-xl font-bold">resippy</h1>
-              <p>
-                A recipe app I made for my own usage. Not as quick as using a
-                notepad though so I don&apos;t update it that often...
-              </p>
-              <p className="text-slate-400 text-xs italic">
-                Tech: SvelteKit, TailwindCSS, Vercel.
-              </p>
-            </div>
-          </a>
-        </div>
+        <section className="grid-cols-1 sm:grid-cols-2 grid gap-4">
+          <PortfolioCard
+            linkUrl="https://resippy.vercel.app/"
+            imgUrl="/resippy.png"
+            title="resippy"
+            description="A recipe app I made for my own usage. Not as quick as using a notepad though so I don't update it that often..."
+            tech="SvelteKit, TailwindCSS, Vercel."
+          />
+
+          <PortfolioCard
+            linkUrl="https://ttvf.vercel.app/"
+            imgUrl="/mrvf.png"
+            title="MRVF"
+            description="A basic video editing app I made for experimenting with FFMPEG. Used for formatting clips for TikTok."
+            tech="SvelteKit, TailwindCSS, Vercel, FFMPEG."
+          />
+
+          <PortfolioCard
+            linkUrl="https://mandelbrot-bice.vercel.app/"
+            imgUrl="/mandelbrot.png"
+            title="mandelbrot"
+            description="An experiment in rendering the mandelbrot set in the browser without blocking the UI using workers."
+            tech="SvelteKit, TailwindCSS, Vercel, Markdown."
+          />
+
+          <PortfolioCard
+            linkUrl="https://emojiboard.kyle-barth.vercel.app/"
+            imgUrl="/emojiboard.png"
+            title="emojiboard"
+            description="An awful idea that was funny to make, each letter corresponds to the nearest looking emoji."
+            tech="Svelte, TailwindCSS, Vercel, SnowPack."
+          />
+        </section>
+
+        <p className="text-center">
+          I think this website counts! Made using NextJS, TailwindCSS, ThreeJS
+          and Vercel. Checkout the code on my GitHub!
+        </p>
+
+        <span className="self-center">
+          <Link
+            url="https://github.com/kyle-barth/portfolio-v2"
+            text="GitHub"
+          />
+        </span>
       </main>
-      {/* https://resippy.vercel.app/ */}
     </Container>
   );
 }
