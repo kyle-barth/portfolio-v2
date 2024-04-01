@@ -21,7 +21,7 @@ export default function PortfolioPage() {
           Here are some of my recent projects I&apos;ve made to stay up to date.
         </p>
 
-        <section className="grid-cols-1 sm:grid-cols-2 grid gap-4">
+        <section className={"grid-cols-1 sm:grid-cols-2 grid" + " " + spacing}>
           <PortfolioCard
             linkUrl="https://resippy.vercel.app/"
             imgUrl="/resippy.png"
