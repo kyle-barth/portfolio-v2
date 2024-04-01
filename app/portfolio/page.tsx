@@ -1,5 +1,5 @@
 import Container from "@/components/container";
-import NavLink from "@/components/nav-link";
+import NavLink from "@/components/link";
 
 export default function PortfolioPage() {
   return (

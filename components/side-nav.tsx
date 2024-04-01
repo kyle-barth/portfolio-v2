@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import NavLink from "./nav-link";
+import NavLink from "./link";
 
 export default function SideNav() {
   const [onMount, setOnMount] = useState(false);
@@ -38,10 +38,10 @@ export default function SideNav() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 sm:gap-0">
-            <NavLink text="about" />
-            <NavLink text="portfolio" />
-          </div>
+          <nav className="flex flex-col gap-4 sm:gap-0">
+            <NavLink url="/about" text="about" />
+            <NavLink url="/portfolio" text="portfolio" />
+          </nav>
         </div>
       </motion.div>
     );
