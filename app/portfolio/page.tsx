@@ -12,7 +12,7 @@ export default function PortfolioPage() {
       </nav>
 
       <main className={"flex flex-col" + " " + spacing}>
-        <h1 className="text-4xl font-bold">About</h1>
+        <h1 className="text-4xl font-bold">Portfolio</h1>
         <p>
           Side projects are a great way to learn new technologies and keep your
           skills up to date, in web dev the whole stack changes every few years
