@@ -1,8 +1,7 @@
 import Container from "@/components/container";
 import Link from "@/components/link";
-import Image from "next/image";
-import { spacing } from "@/constants/spacing";
 import PortfolioCard from "@/components/portfolio-card";
+import { spacing } from "@/constants/spacing";
 
 export default function PortfolioPage() {
   return (
@@ -58,8 +57,9 @@ export default function PortfolioPage() {
 
         <p className="text-center">
           I think this website counts! Made using NextJS, TailwindCSS, ThreeJS
-          and Vercel. Checkout the code on my GitHub!
+          FramerMotion and Vercel.
         </p>
+        <p className="text-center">Checkout the code on my GitHub!</p>
 
         <span className="self-center">
           <Link
