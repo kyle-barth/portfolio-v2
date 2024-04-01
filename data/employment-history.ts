@@ -25,7 +25,7 @@ export const employmentHistory = [
   {
     key: "sdm",
     title: "Full Stack Web Developer at Smarter DM, Luton, Bedfordshire",
-    date: "November 2020 — April 2022",
+    date: "October 2018 — November 2020",
     description: `Working in a small tech startup I lead the creation of an analytics portal for a large waste management company.`,
     tech: "Angular, PlayWright, Jest.",
   },
