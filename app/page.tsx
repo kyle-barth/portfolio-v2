@@ -53,7 +53,7 @@ export default function Home() {
           </div>
           <div className="hint">
             <i />
-            Scroll to look around the desk
+            Click and drag to look around the desk
           </div>
         </section>
 

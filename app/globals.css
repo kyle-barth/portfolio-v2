@@ -69,8 +69,10 @@ p { margin: 0; }
   transition: transform 160ms var(--ease-out), background-color 200ms ease, border-color 200ms ease; }
 .btn.primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
 .hint { position: absolute; left: max(var(--pad), env(safe-area-inset-left, 0px)); bottom: 28px; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 12px; }
-.hint i { width: 1px; height: 36px; background: linear-gradient(var(--lamp), transparent); display: block; transform-origin: top; animation: drip 2.4s var(--ease-out) 1.2s 3 both; }
-@keyframes drip { 0% { transform: scaleY(0); opacity: 1; } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+.hint i { width: 36px; height: 1px; background: linear-gradient(90deg, transparent, var(--lamp)); display: block; transform-origin: left; animation: sweep 2.4s var(--ease-out) 1.2s 3 both; }
+@keyframes sweep { 0% { transform: scaleX(0); opacity: 1; } 60% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* dragging needs a mouse or pen; touch screens scroll instead */
+@media (hover: none), (pointer: coarse) { .hint { display: none; } }
 .hero { position: relative; }
 
 h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; letter-spacing: -.035em; font-variation-settings: "opsz" 48; }

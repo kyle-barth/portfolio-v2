@@ -1,6 +1,7 @@
 // The After Hours scene: Kyle's desk at night, lit by a lava lamp that switches on as the page opens.
 // Each section has a camera shot; when the section in view changes, the camera glides to the new
-// shot on a timed ease (so scroll speed never makes it jump). The monitor shows code, then the picked
+// shot on a timed ease (so scroll speed never makes it jump). Dragging with a mouse turns the camera
+// around the shot, and it eases back after a few idle seconds. The monitor shows code, then the picked
 // project, then a git log of jobs, then contact details. createAfterHours() builds it and tears it down.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
@@ -415,7 +416,7 @@ export function createAfterHours(o: AfterHoursOptions) {
     { p: [-2.8, 0.55, 0.8], s: [2.2, 1.3, 1.8], label: 'Experience', to: '#experience' },
     { p: [-4.2, 0.92, -1.25], s: [1.2, 1.9, 2.4], label: 'Small form factor PC in a Cooler Master NR200P', to: null },
     { p: [-4.25, 0.45, 1.6], s: [0.8, 0.95, 0.8], label: 'A very sleepy, very blocky Snorlax', to: null },
-    { p: [3.5, 0.35, 1.3], s: [2.6, 0.9, 1.8], label: 'Grab a coffee and say hi', to: '#contact' },
+    { p: [3.95, 0.35, 1.15], s: [1.9, 0.9, 1.9], label: 'Grab a coffee and say hi', to: '#contact' }, // the mug and the donut
     { p: [3.65, 2.25, -1.08], s: [2.6, 4.5, 2.7], label: 'Bambu Lab P2S with AMS 2 Pro, printing a tiny garage', to: null },
   ];
   const proxies = HOTSPOTS.map((d) => {
@@ -430,6 +431,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   let hover: Hotspot | null = null, ready = false;
   function updateHover() {
     pointerDirty = false;
+    if (look.dragging) { hover = null; tip.classList.remove('on'); canvas.style.cursor = 'grabbing'; return; }
     if (!ready || phoneQ.matches || pointer.px < 0 || document.elementFromPoint(pointer.px, pointer.py) !== canvas) hover = null;
     else {
       ndc.set((pointer.px / W) * 2 - 1, -(pointer.py / H) * 2 + 1);
@@ -441,15 +443,64 @@ export function createAfterHours(o: AfterHoursOptions) {
       tip.textContent = hover.label;
       tip.style.translate = `${pointer.px + 14}px ${pointer.py + 14}px`;
       tip.classList.add('on');
-      canvas.style.cursor = hover.to ? 'pointer' : '';
+      canvas.style.cursor = hover.to ? 'pointer' : 'grab';
     } else {
       tip.classList.remove('on');
-      canvas.style.cursor = '';
+      canvas.style.cursor = ready ? 'grab' : '';
     }
   }
-  const onCanvasClick = () => { if (hover?.to) document.querySelector(hover.to)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); };
+  // a drag that ends on a hotspot is not a click on it
+  const onCanvasClick = () => { if (hover?.to && look.moved < 6) document.querySelector(hover.to)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); };
   canvas.addEventListener('click', onCanvasClick);
   cleanups.push(() => canvas.removeEventListener('click', onCanvasClick));
+
+  /* ---------- Click and drag to look around (mouse and pen; touch keeps scrolling the page) ---------- */
+  // The drag turns the camera around the shot's target, on top of the shot. After LOOK_IDLE seconds
+  // without a drag, or when the section changes, the camera eases back to the shot.
+  const LOOK_IDLE = 5;
+  const LOOK_BACK = reduce ? 1.0 : 1.6;
+  const LOOK_THETA = 1.45; // never swing past side-on, so the camera stays in front of the wall
+  const LOOK_PHI = [0.12, 1.42] as const; // from nearly overhead to just above the desk
+  const look = {
+    theta: 0, phi: 0, tTheta: 0, tPhi: 0, dragging: false, id: -1, x: 0, y: 0, moved: 0,
+    releasedAt: -Infinity, backAt: -Infinity, backDur: LOOK_BACK, fromTheta: 0, fromPhi: 0,
+  };
+  function lookBack(t: number, dur: number) {
+    look.backAt = t; look.backDur = dur; look.fromTheta = look.theta; look.fromPhi = look.phi;
+  }
+  const onDown = (e: PointerEvent) => {
+    if (!ready || e.button !== 0 || e.pointerType === 'touch') return;
+    e.preventDefault(); // no text selection while dragging
+    canvas.setPointerCapture(e.pointerId);
+    // grabbing mid-return holds the view where it is
+    Object.assign(look, { dragging: true, id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, tTheta: look.theta, tPhi: look.phi, backAt: -Infinity });
+    updateHover();
+  };
+  const onDrag = (e: PointerEvent) => {
+    if (!look.dragging || e.pointerId !== look.id) return;
+    const dx = e.clientX - look.x, dy = e.clientY - look.y;
+    look.x = e.clientX; look.y = e.clientY; look.moved += Math.abs(dx) + Math.abs(dy);
+    // half a turn per screen height, like grabbing the room and pulling it round
+    look.tTheta = THREE.MathUtils.clamp(cam.theta + look.tTheta - (dx / H) * Math.PI, -LOOK_THETA, LOOK_THETA) - cam.theta;
+    look.tPhi = THREE.MathUtils.clamp(cam.phi + look.tPhi - (dy / H) * Math.PI * 0.6, LOOK_PHI[0], LOOK_PHI[1]) - cam.phi;
+  };
+  const onRelease = (e: PointerEvent) => {
+    if (!look.dragging || e.pointerId !== look.id) return;
+    look.dragging = false; look.releasedAt = time;
+    updateHover(); // before the click event, so a plain click still finds its hotspot
+  };
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onDrag);
+  canvas.addEventListener('pointerup', onRelease);
+  canvas.addEventListener('pointercancel', onRelease);
+  canvas.addEventListener('lostpointercapture', onRelease);
+  cleanups.push(() => {
+    canvas.removeEventListener('pointerdown', onDown);
+    canvas.removeEventListener('pointermove', onDrag);
+    canvas.removeEventListener('pointerup', onRelease);
+    canvas.removeEventListener('pointercancel', onRelease);
+    canvas.removeEventListener('lostpointercapture', onRelease);
+  });
 
   /* ---------- Place the MacBook, compile shaders, then switch the lava lamp on ---------- */
   // Wait for the MacBook file so it is in the first frame and the lamp's shadow; if it fails or is
@@ -521,6 +572,7 @@ export function createAfterHours(o: AfterHoursOptions) {
       copyCam(from, cam);
       shotIdx = Math.max(0, Math.min(set.length - 1, Math.round(stage)));
       glideAt = t;
+      if (!look.dragging && (look.theta || look.phi)) lookBack(t, GLIDE); // a new section starts from its own shot
     }
     shotFor(shotIdx, set, W / H, want);
     const k = camReady ? easeInOut(Math.min(1, (t - glideAt) / GLIDE)) : 1;
@@ -537,10 +589,30 @@ export function createAfterHours(o: AfterHoursOptions) {
       cam.sy = THREE.MathUtils.lerp(from.sy, want.sy, k);
     }
     camReady = true;
+
+    // look-around: follow the drag closely; after a pause, ease back to the shot
+    if (!look.dragging && look.backAt === -Infinity && (look.tTheta || look.tPhi) && t - look.releasedAt > LOOK_IDLE) lookBack(t, LOOK_BACK);
+    if (look.backAt > -Infinity) {
+      const b = Math.min(1, (t - look.backAt) / look.backDur), f = 1 - easeInOut(b);
+      look.theta = look.tTheta = look.fromTheta * f;
+      look.phi = look.tPhi = look.fromPhi * f;
+      if (b >= 1) look.backAt = -Infinity;
+      pointerDirty = true;
+    } else if (look.theta !== look.tTheta || look.phi !== look.tPhi) {
+      const lk = 1 - Math.exp(-dt * 14);
+      look.theta += (look.tTheta - look.theta) * lk;
+      look.phi += (look.tPhi - look.phi) * lk;
+      if (Math.abs(look.tTheta - look.theta) + Math.abs(look.tPhi - look.phi) < 1e-4) { look.theta = look.tTheta; look.phi = look.tPhi; }
+      pointerDirty = true;
+    }
+
+    // pointer parallax holds still while dragging, so only the drag moves the view
     const pk = 1 - Math.exp(-dt * 3.2);
-    pointer.sx += ((phone || reduce ? 0 : pointer.x) - pointer.sx) * pk;
-    pointer.sy += ((phone || reduce ? 0 : pointer.y) - pointer.sy) * pk;
-    sph.set(cam.radius, THREE.MathUtils.clamp(cam.phi + pointer.sy * 0.035, 0.05, 1.5), cam.theta - pointer.sx * 0.06);
+    if (!look.dragging) {
+      pointer.sx += ((phone || reduce ? 0 : pointer.x) - pointer.sx) * pk;
+      pointer.sy += ((phone || reduce ? 0 : pointer.y) - pointer.sy) * pk;
+    }
+    sph.set(cam.radius, THREE.MathUtils.clamp(cam.phi + look.phi + pointer.sy * 0.035, 0.05, 1.5), cam.theta + look.theta - pointer.sx * 0.06);
     camera.position.setFromSpherical(sph).add(cam.target);
     camera.lookAt(cam.target);
     camera.fov = cam.fov;

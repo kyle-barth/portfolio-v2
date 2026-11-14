@@ -1,7 +1,11 @@
 // Model lab: one prop on its own in neutral studio light, for checking it against product photos.
-// Open the site with ?lab=keyboard (or macbook, macbook-built, printer, chair) and drag to orbit. In the console,
-// __labView(i) jumps to one of the fixed views, and __labCapture('v1') renders all six into a contact
-// sheet plus a hero shot and posts them to a local receiver on ?save=<port> (default 8799).
+// Open the site with ?lab=keyboard (or macbook, macbook-built, printer, printer-bare, chair) and drag to
+// orbit. In the console, __labView(i) jumps to one of the fixed views, and __labCapture('v1') renders all
+// six into a contact sheet plus a hero shot and posts them to a local receiver on ?save=<port> (default 8799).
+// Models built from a measured spec also get __labCheck() (each spec'd dimension, measured off the built
+// parts) and __labOverlay('side', 'v1'): the model rendered with an orthographic camera lined up to a
+// reference render, with its outline overlap (IoU) and a sheet of the photo with the model's edges on it,
+// the model alone, the outline difference and a 50% blend.
 // This module is only loaded when ?lab is in the URL.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -11,9 +15,30 @@ import { buildP2S } from './p2s';
 import { buildChair } from './props/chair';
 import { buildKeyboard } from './props/keyboard';
 import { buildMacBook, loadMacBook } from './props/macbook';
+import { buildLavaLamp } from './props/lava-lamp';
 import { applyReflections } from './props/night-env';
+import { buildDonut, buildMug } from './props/tableware';
+import { LAVA_CHECKS, LAVA_REFS } from './specs/lava';
+import { P2S_CHECKS, P2S_REFS, type RefImage } from './specs/p2s';
 
-type Model = { name: string; root: THREE.Object3D; front: THREE.Vector3 };
+type Model = {
+  name: string;
+  root: THREE.Object3D;
+  front: THREE.Vector3;
+  /** Spec'd dimensions measured off the built parts, and what they should be (mm). */
+  measured?: Record<string, number>;
+  checks?: { name: string; want: number; tol: number }[];
+  /** Reference renders to overlay, and how many mm one scene unit is. */
+  refs?: Record<string, RefImage>;
+  unitMm?: number;
+};
+
+function printer(ams: boolean): Model {
+  const p = buildP2S({ reduce: true, ams });
+  p.update(70, 0, 1);
+  const refs = Object.fromEntries(Object.entries(P2S_REFS).filter(([, r]) => r.ams === ams));
+  return { name: `Bambu Lab P2S${ams ? ' with AMS 2 Pro' : ''}`, root: p.root, front: new THREE.Vector3(0, 0, 1), measured: p.measured, checks: P2S_CHECKS, refs, unitMm: 160 };
+}
 
 /** A plain macOS-style desktop for the laptop screen. */
 function desktopMaterial() {
@@ -34,12 +59,22 @@ const MODELS: Record<string, () => Model | Promise<Model>> = {
   keyboard: () => ({ name: 'Rama Works U80-A (Milk)', root: buildKeyboard(), front: new THREE.Vector3(0, 0, 1) }),
   macbook: async () => ({ name: 'MacBook Pro 14-inch (Space Black)', root: (await loadMacBook(desktopMaterial())).root, front: new THREE.Vector3(0, 0, 1) }),
   'macbook-built': () => ({ name: 'MacBook Pro 14-inch (built-in fallback)', root: buildMacBook(desktopMaterial()).root, front: new THREE.Vector3(0, 0, 1) }),
-  printer: () => {
-    const p = buildP2S({ reduce: true });
-    p.update(70, 0, 1);
-    return { name: 'Bambu Lab P2S with AMS 2 Pro', root: p.root, front: new THREE.Vector3(0, 0, 1) };
-  },
+  printer: () => printer(true),
+  'printer-bare': () => printer(false),
   chair: () => ({ name: 'Secretlab TITAN Evo', root: buildChair(), front: new THREE.Vector3(0, 0, -1) }),
+  lava: () => {
+    const l = buildLavaLamp({ reduce: true });
+    l.update(30, 1); // switched on, wax mid-cycle
+    l.light.intensity = 0; // the lab's own lights show the shape; the lamp's glow is self-lit anyway
+    return { name: 'Lava lamp (14.5 inch classic)', root: l.root, front: new THREE.Vector3(0, 0, 1), measured: l.measured, checks: LAVA_CHECKS, refs: LAVA_REFS, unitMm: 160 };
+  },
+  tableware: () => {
+    const g = new THREE.Group();
+    const mug = buildMug(); mug.position.set(-0.55, 0, 0); mug.rotation.y = -0.6;
+    const plate = buildDonut(); plate.position.set(0.45, 0, 0.1);
+    g.add(mug, plate);
+    return { name: 'Rustic stoneware mug and plate', root: g, front: new THREE.Vector3(0, 0, 1) };
+  },
 };
 
 // yaw is measured from the model's front; sideOf() names the side the camera ends up on, as the
@@ -67,7 +102,7 @@ export async function createLab(name: string) {
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.NeutralToneMapping; // Khronos PBR Neutral: built for judging product colour
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -186,7 +221,152 @@ export async function createLab(name: string) {
     return files;
   }
 
-  Object.assign(window, { __labCapture: capture, __labView: (i: number) => place(VIEWS[i] ?? VIEWS[0]) });
+  /** Every spec'd dimension: wanted, measured off the built parts, and whether it is within tolerance. */
+  function check() {
+    if (!model.checks || !model.measured) return 'This model has no spec to check against.';
+    const rows = model.checks.map((c) => {
+      const got = model.measured![c.name];
+      const ok = got !== undefined && Math.abs(got - c.want) <= c.tol;
+      return { check: c.name, want: c.want, got: got === undefined ? null : +got.toFixed(1), diff: got === undefined ? null : +(got - c.want).toFixed(1), tol: c.tol, ok };
+    });
+    console.table(rows);
+    return rows;
+  }
+
+  /**
+   * Line the model up with a reference render (orthographic, mapped by the ref's mm/px, centre column and
+   * floor row) and compare: outline IoU, plus a sheet of photo + model edges, model alone, outline
+   * difference (red: photo only, cyan: model only) and a 50% blend.
+   */
+  async function overlay(refName: string, tag = 'v1') {
+    const ref = model.refs?.[refName];
+    if (!ref) return `No reference "${refName}". Try: ${Object.keys(model.refs ?? {}).join(', ') || 'none for this model'}`;
+    const res = await fetch(`http://localhost:${port}/ref/${ref.file}`);
+    if (!res.ok) throw new Error(`receiver said ${res.status} for ${ref.file}`);
+    const img = await createImageBitmap(await res.blob());
+    // compare the whole image, or just its region of interest; render with the longest side N
+    const N = 1200, P = 900;
+    const [rx0, ry0, rx1, ry1] = ref.roi ?? [0, 0, img.width, img.height];
+    const iw = rx1 - rx0, ih = ry1 - ry0, fit = N / Math.max(iw, ih);
+    const NW = Math.round(iw * fit), NH = Math.round(ih * fit);
+    const u = ref.mmPerPx / (model.unitMm ?? 1); // scene units per image pixel
+    const cam = new THREE.OrthographicCamera((rx0 - ref.cx) * u, (rx1 - ref.cx) * u, (ref.floorY - ry0) * u, (ref.floorY - ry1) * u, 0.01, 1000);
+    if (ref.view === 'front') cam.position.set(0, 0, 100); else cam.position.set(-100, 0, 0);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld();
+
+    renderer.setAnimationLoop(null);
+    ground.visible = false;
+    renderer.setSize(NW, NH, false);
+    const grab = () => { const c = document.createElement('canvas'); c.width = NW; c.height = NH; c.getContext('2d')!.drawImage(renderer.domElement, 0, 0, NW, NH); return c; };
+    const bg = scene.background;
+
+    // the photo and its outline mask (anything not the plain background; without a region of interest the
+    // caption strip along the bottom is ignored)
+    const photo = document.createElement('canvas'); photo.width = NW; photo.height = NH;
+    const px = photo.getContext('2d', { willReadFrequently: true })!;
+    px.fillStyle = '#fff'; px.fillRect(0, 0, NW, NH); // a transparent backdrop counts as white
+    px.drawImage(img, rx0, ry0, iw, ih, 0, 0, NW, NH);
+    const pd = px.getImageData(0, 0, NW, NH).data, bgc = [pd[0], pd[1], pd[2]];
+    const photoMask = new Uint8Array(NW * NH);
+    for (let i = 0; i < NW * NH; i++) {
+      const y = Math.floor(i / NW), k = i * 4;
+      photoMask[i] = (ref.roi || y < NH * 0.89) && Math.max(Math.abs(pd[k] - bgc[0]), Math.abs(pd[k + 1] - bgc[1]), Math.abs(pd[k + 2] - bgc[2])) > 18 ? 1 : 0;
+    }
+
+    // the model: lit, then as a flat white mask, then its visible edges
+    // Product renders are lit by softboxes from the camera's side and above, so this is lit the same way for
+    // every reference view, with the lab's own key and rim lights off (in the side view they would leave the
+    // panel in shadow). The light sits high, about 55 degrees above the view: nearer the view axis its mirror
+    // highlight lands on every front face and on the lower front of anything round.
+    scene.background = new THREE.Color(`rgb(${bgc.join(',')})`);
+    // The studio environment is halved too: the renders' backdrop is dark around the product, and at full
+    // strength it fills every front-facing surface (dark spools read grey).
+    const headlight = new THREE.DirectionalLight('#ffffff', 2.6); // tuned so the body's front matches the renders' tone
+    headlight.position.copy(cam.position).add(new THREE.Vector3(ref.view === 'front' ? 30 : 0, 145, ref.view === 'front' ? 0 : 30));
+    scene.add(headlight, headlight.target);
+    key.visible = rim.visible = false;
+    scene.environmentIntensity = 0.5;
+    renderer.render(scene, cam);
+    scene.environmentIntensity = 1;
+    key.visible = rim.visible = true;
+    scene.remove(headlight, headlight.target);
+    headlight.dispose();
+    const beauty = grab();
+    scene.background = new THREE.Color('#000');
+    scene.overrideMaterial = new THREE.MeshBasicMaterial({ color: '#fff', side: THREE.DoubleSide });
+    renderer.render(scene, cam);
+    const md = grab().getContext('2d')!.getImageData(0, 0, NW, NH).data;
+    const edges = new THREE.Scene();
+    const lineMat = new THREE.LineBasicMaterial({ color: '#ff00ff' });
+    model.root.updateMatrixWorld(true);
+    model.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.visible) return;
+      const l = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 35), lineMat);
+      l.matrixAutoUpdate = false;
+      l.matrix.copy(m.matrixWorld);
+      edges.add(l);
+    });
+    scene.overrideMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+    renderer.autoClear = false;
+    renderer.clear();
+    renderer.render(scene, cam); // depth only, so hidden edges stay hidden
+    renderer.render(edges, cam);
+    renderer.autoClear = true;
+    const edgeCanvas = grab();
+    scene.overrideMaterial = null;
+    scene.background = bg;
+    edges.traverse((o) => { if ((o as THREE.LineSegments).isLineSegments) (o as THREE.LineSegments).geometry.dispose(); });
+    lineMat.dispose();
+
+    // outline overlap
+    let both = 0, photoOnly = 0, modelOnly = 0;
+    const diff = document.createElement('canvas'); diff.width = NW; diff.height = NH;
+    const dx = diff.getContext('2d')!, dd = dx.createImageData(NW, NH);
+    for (let i = 0; i < NW * NH; i++) {
+      const a = photoMask[i], b = md[i * 4] > 127 ? 1 : 0, k = i * 4;
+      const c = a && b ? [150, 150, 150] : a ? [235, 60, 60] : b ? [40, 200, 230] : [250, 250, 250];
+      if (a && b) both++; else if (a) photoOnly++; else if (b) modelOnly++;
+      dd.data[k] = c[0]; dd.data[k + 1] = c[1]; dd.data[k + 2] = c[2]; dd.data[k + 3] = 255;
+    }
+    dx.putImageData(dd, 0, 0);
+    const union = both + photoOnly + modelOnly;
+    const metrics = { ref: refName, iou: +(both / union).toFixed(4), photoOnlyPct: +((100 * photoOnly) / union).toFixed(2), modelOnlyPct: +((100 * modelOnly) / union).toFixed(2) };
+
+    // the sheet: four panels, side by side for tall subjects, two by two otherwise
+    const ps = P / Math.max(NW, NH), PW = Math.round(NW * ps), PH = Math.round(NH * ps);
+    const cols = PH > PW * 1.3 ? 4 : 2;
+    const sheet = document.createElement('canvas');
+    sheet.width = PW * cols; sheet.height = PH * (4 / cols) + 56;
+    const x = sheet.getContext('2d')!;
+    x.fillStyle = '#d8dade'; x.fillRect(0, 0, sheet.width, sheet.height);
+    x.fillStyle = '#1b1d22'; x.font = `600 ${sheet.width < 1400 ? 18 : 26}px system-ui, sans-serif`;
+    x.fillText(`${model.name}: overlay on "${refName}" ${tag}  |  outline IoU ${metrics.iou}  (photo only ${metrics.photoOnlyPct}%, model only ${metrics.modelOnlyPct}%)`, 16, 36, sheet.width - 32);
+    const panel = (i: number, title: string, draw: (c: CanvasRenderingContext2D) => void) => {
+      const ox = (i % cols) * PW, oy = 56 + Math.floor(i / cols) * PH;
+      x.save(); x.translate(ox, oy); x.scale(ps, ps); draw(x); x.restore();
+      x.strokeStyle = '#fff'; x.lineWidth = 2; x.strokeRect(ox, oy, PW, PH);
+      x.font = `500 ${PW < 500 ? 14 : 19}px system-ui, sans-serif`;
+      const tw = Math.min(PW - 20, x.measureText(title).width + 20);
+      x.fillStyle = 'rgba(20,22,26,.75)'; x.fillRect(ox + 10, oy + 10, tw, 30);
+      x.fillStyle = '#fff'; x.fillText(title, ox + 20, oy + 30, tw - 20);
+    };
+    panel(0, 'photo with model edges', (c) => { c.drawImage(photo, 0, 0); c.globalCompositeOperation = 'lighter'; c.drawImage(edgeCanvas, 0, 0); c.globalCompositeOperation = 'source-over'; });
+    panel(1, 'model, same camera', (c) => c.drawImage(beauty, 0, 0));
+    panel(2, 'outline: red photo only, cyan model only', (c) => c.drawImage(diff, 0, 0));
+    panel(3, '50% blend', (c) => { c.drawImage(photo, 0, 0); c.globalAlpha = 0.5; c.drawImage(beauty, 0, 0); c.globalAlpha = 1; });
+    const file = await save(`${name}-${tag}-overlay-${refName}.png`, sheet);
+
+    ground.visible = true;
+    resize();
+    place(VIEWS[2]);
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+    return { ...metrics, file };
+  }
+
+  // __labScene: the scene itself, for poking at parts from the console (hide one, look again)
+  Object.assign(window, { __labCapture: capture, __labView: (i: number) => place(VIEWS[i] ?? VIEWS[0]), __labCheck: check, __labOverlay: overlay, __labScene: scene });
 
   return {
     dispose() {

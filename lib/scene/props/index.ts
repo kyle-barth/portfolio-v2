@@ -1,5 +1,6 @@
 // Lays out the desk. Back row, left to right: NR200P PC, lava lamp, pothos, OLED monitor, P2S.
-// Front: MacBook and Snorlax on the left, keyboard and mouse on the mat, coffee and a donut on the right.
+// Front: MacBook and Snorlax on the left, keyboard and mouse on the mat, coffee in front of the printer
+// and a donut beside it on the right.
 // The chair sits pulled out in front of the desk. Static parts merge by material; lights, the lava
 // and the screens' materials stay live. The MacBook is a model file, so it goes into its slot later.
 import * as THREE from 'three';
@@ -28,8 +29,8 @@ export const LAYOUT = {
   lava: [-3.2, 0, -1.72] as V3,
   pothos: [-2.3, 0, -1.88] as V3,
   snorlax: [-4.25, 0, 1.6] as V3,
-  mug: [2.75, 0.025, 0.95] as V3, // coaster on the mat's right-hand end
-  donut: [4.15, 0, 1.5] as V3,
+  mug: [3.7, 0, 0.6] as V3, // coaster on the desk in front of the printer
+  donut: [4.25, 0, 1.6] as V3,
   printer: [3.65, 0, -1.08] as V3,
   chair: [-2.6, DESK.floor, 4.7] as V3,
 };
