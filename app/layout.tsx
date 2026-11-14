@@ -1,22 +1,30 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import { Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google';
+import './globals.css';
 
-const inter = Inter({ subsets: ["latin"] });
+// One family for the page (its optical sizes cover display and text); the mono face only paints the 3D monitor.
+const display = Bricolage_Grotesque({ subsets: ['latin'], axes: ['opsz'], variable: '--font-display', display: 'swap' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: '500', variable: '--font-mono', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: "kyle-barth.dev",
-  description: "Homepage for Kyle Barth - Senior Front-End Software Engineer",
+  metadataBase: new URL('https://www.kyle-barth.dev'),
+  title: 'Kyle Barth, Senior Front-End Software Engineer',
+  description:
+    'Kyle Barth builds fast, well-tested web front ends in London. Side projects include Garage, a voice and text chat app, and Vitals, a sensor monitor for Windows.',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#070a12',
+  colorScheme: 'dark',
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${display.variable} ${mono.variable}`}>
+      <body data-side="left">{children}</body>
     </html>
   );
 }
