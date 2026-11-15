@@ -104,14 +104,14 @@ export const MBP = {
  * The references for the lab's overlay (?lab=macbook-closed for the four closed views, ?lab=macbook
  * for the deck). mmPerPx, cx (the pixel column of x = 0, or of z = 0 seen from the side) and floorY
  * (the pixel row of the desk, y = 0; seen from above, the row of z = 0). Seen from above, `up` says
- * which edge is at the top of the image.
+ * which way the top of the image points: +z is the laptop's front, -z its back.
  */
 export const MBP_REFS = {
-  top: { file: 'mbp-dimensions_1_14_inch.jpg', view: 'top' as const, up: 'front' as const, mmPerPx: 0.3408, cx: 458.5, floorY: 319, roi: [0, 0, 930, 648] as [number, number, number, number] },
+  top: { file: 'mbp-dimensions_1_14_inch.jpg', view: 'top' as const, up: '+z' as const, mmPerPx: 0.3408, cx: 458.5, floorY: 319, roi: [0, 0, 930, 648] as [number, number, number, number] },
   front: { file: 'mbp-dimensions_2_14_inch.jpg', view: 'front' as const, mmPerPx: 0.3386, cx: 460.5, floorY: 50.5, roi: [0, 0, 932, 54] as [number, number, number, number] },
   left: { file: 'mbp-ports_1_14_inch.jpg', view: 'left' as const, mmPerPx: 0.1538, cx: 705.7, floorY: 127.6, roi: [0, 0, 820, 128] as [number, number, number, number] },
   right: { file: 'mbp-ports_2_14_inch.jpg', view: 'right' as const, mmPerPx: 0.1571, cx: 128.1, floorY: 124.3, roi: [0, 0, 820, 125] as [number, number, number, number] },
-  deck: { file: 'mbp-keyboard_14_inch.jpg', view: 'top' as const, up: 'back' as const, mmPerPx: 0.3321, cx: 569.5, floorY: 347.85, roi: [95, 26, 1045, 688] as [number, number, number, number] },
+  deck: { file: 'mbp-keyboard_14_inch.jpg', view: 'top' as const, up: '-z' as const, mmPerPx: 0.3321, cx: 569.5, floorY: 347.85, roi: [95, 26, 1045, 688] as [number, number, number, number] },
 };
 
 /** Checks run by the lab: each is a measured quantity with a tolerance, in mm. */

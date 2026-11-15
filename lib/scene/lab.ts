@@ -15,11 +15,17 @@ import { buildP2S } from './p2s';
 import { buildChair } from './props/chair';
 import { buildKeyboard } from './props/keyboard';
 import { buildMacBook } from './props/macbook';
+import { buildMonitor } from './props/monitor';
+import { buildNR200 } from './props/pc';
+import { buildSora } from './props/mouse';
 import { buildLavaLamp } from './props/lava-lamp';
 import { applyReflections } from './props/night-env';
 import { buildDonut, buildMug } from './props/tableware';
 import { LAVA_CHECKS, LAVA_REFS } from './specs/lava';
 import { MBP_CHECKS, MBP_REFS } from './specs/macbook';
+import { FO27, FO27_CHECKS, FO27_REFS } from './specs/fo27q3';
+import { NR200_CHECKS, NR200_REFS } from './specs/nr200p';
+import { SORA_CHECKS, SORA_REFS } from './specs/sora';
 import { P2S_CHECKS, P2S_REFS, type RefImage } from './specs/p2s';
 
 type Model = {
@@ -66,6 +72,19 @@ const MODELS: Record<string, () => Model | Promise<Model>> = {
   // open, as on the desk (overlays the deck seen from above); closed, for the four outside views
   macbook: () => macbook(108, { deck: MBP_REFS.deck }),
   'macbook-closed': () => macbook(0, { top: MBP_REFS.top, front: MBP_REFS.front, left: MBP_REFS.left, right: MBP_REFS.right }),
+  mouse: () => {
+    const m = buildSora();
+    return { name: 'Ninjutso Sora V2 (white)', root: m.root, front: new THREE.Vector3(0, 0, -1), measured: m.measured, checks: SORA_CHECKS, refs: SORA_REFS, unitMm: 160 };
+  },
+  monitor: () => {
+    // stood at the render's height, so the overlays line up; a dark screen
+    const m = buildMonitor(new THREE.MeshStandardMaterial({ color: '#07080a', roughness: 0.15, metalness: 0.1 }), { panelBottom: FO27.head.renderBottom, tipZ: Number(new URLSearchParams(location.search).get('tipz')) || undefined });
+    return { name: 'Gigabyte AORUS FO27Q3', root: m.root, front: new THREE.Vector3(0, 0, 1), measured: m.measured, checks: FO27_CHECKS, refs: FO27_REFS, unitMm: 160 };
+  },
+  pc: () => {
+    const p = buildNR200();
+    return { name: 'Cooler Master NR200P MAX V2 (grey)', root: p.root, front: new THREE.Vector3(0, 0, 1), measured: p.measured, checks: NR200_CHECKS, refs: NR200_REFS, unitMm: 160 };
+  },
   printer: () => printer(true),
   'printer-bare': () => printer(false),
   chair: () => ({ name: 'Secretlab TITAN Evo', root: buildChair(), front: new THREE.Vector3(0, 0, -1) }),
@@ -222,6 +241,12 @@ export async function createLab(name: string) {
     heroCopy.width = 1600; heroCopy.height = 1200;
     heroCopy.getContext('2d')!.drawImage(hero, 0, 0);
     files.push(await save(`${name}-${tag}-hero.png`, heroCopy));
+    // and from straight below, front at the top (the ground only catches shadows on its upper face)
+    const under = renderAt(1200, 900, { yaw: 0, elev: -89 });
+    const underCopy = document.createElement('canvas');
+    underCopy.width = 1200; underCopy.height = 900;
+    underCopy.getContext('2d')!.drawImage(under, 0, 0);
+    files.push(await save(`${name}-${tag}-under.png`, underCopy));
     resize();
     place(VIEWS[2]);
     renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
@@ -256,15 +281,6 @@ export async function createLab(name: string) {
     const [rx0, ry0, rx1, ry1] = ref.roi ?? [0, 0, img.width, img.height];
     const iw = rx1 - rx0, ih = ry1 - ry0, fit = N / Math.max(iw, ih);
     const NW = Math.round(iw * fit), NH = Math.round(ih * fit);
-    const u = ref.mmPerPx / (model.unitMm ?? 1); // scene units per image pixel
-    const cam = new THREE.OrthographicCamera((rx0 - ref.cx) * u, (rx1 - ref.cx) * u, (ref.floorY - ry0) * u, (ref.floorY - ry1) * u, 0.01, 1000);
-    if (ref.view === 'front') cam.position.set(0, 0, 100);
-    else if (ref.view === 'left') cam.position.set(-100, 0, 0);
-    else if (ref.view === 'right') cam.position.set(100, 0, 0);
-    else { cam.position.set(0, 100, 0); cam.up.set(0, 0, ref.up === 'front' ? 1 : -1); } // from above
-    cam.lookAt(0, 0, 0);
-    cam.updateMatrixWorld();
-
     renderer.setAnimationLoop(null);
     ground.visible = false;
     renderer.setSize(NW, NH, false);
@@ -281,7 +297,17 @@ export async function createLab(name: string) {
     const photoMask = new Uint8Array(NW * NH);
     for (let i = 0; i < NW * NH; i++) {
       const y = Math.floor(i / NW), k = i * 4;
-      photoMask[i] = (ref.roi || y < NH * 0.89) && Math.max(Math.abs(pd[k] - bgc[0]), Math.abs(pd[k + 1] - bgc[1]), Math.abs(pd[k + 2] - bgc[2])) > 18 ? 1 : 0;
+      photoMask[i] = ref.channel === 'r' ? (pd[k] > (ref.thr ?? 18) ? 1 : 0)
+        : (ref.roi || y < NH * 0.89) && Math.max(Math.abs(pd[k] - bgc[0]), Math.abs(pd[k + 1] - bgc[1]), Math.abs(pd[k + 2] - bgc[2])) > (ref.thr ?? 18) ? 1 : 0;
+    }
+    // A side view lit only along its top (a black mouse in the dark): everything under the outline,
+    // down to the desk, is product.
+    if (ref.fill === 'down') {
+      for (let x = 0; x < NW; x++) {
+        let y = 0;
+        while (y < NH && !photoMask[y * NW + x]) y++;
+        for (; y < NH; y++) photoMask[y * NW + x] = 1;
+      }
     }
     // A dark product on a dark backdrop (a black keyboard, port openings) has holes in that mask:
     // whatever the backdrop can't reach from the image's edge is product.
@@ -300,6 +326,22 @@ export async function createLab(name: string) {
       for (let i = 0; i < NW * NH; i++) if (!seen[i]) photoMask[i] = 1;
     }
 
+    let cam: THREE.OrthographicCamera | THREE.PerspectiveCamera;
+    let pose = '';
+    if (ref.view === 'persp') {
+      ({ cam, pose } = fitPose(photoMask, NW, NH, ref.yaw));
+    } else {
+      const u = ref.mmPerPx / (model.unitMm ?? 1); // scene units per image pixel
+      cam = new THREE.OrthographicCamera((rx0 - ref.cx) * u, (rx1 - ref.cx) * u, (ref.floorY - ry0) * u, (ref.floorY - ry1) * u, 0.01, 1000);
+      if (ref.view === 'front') cam.position.set(0, 0, 100);
+      else if (ref.view === 'left') cam.position.set(-100, 0, 0);
+      else if (ref.view === 'right') cam.position.set(100, 0, 0);
+      else if (ref.view === 'back') cam.position.set(0, 0, -100);
+      else { cam.position.set(0, 100, 0); cam.up.set(0, 0, ref.up === '+z' ? 1 : -1); } // from above
+      cam.lookAt(0, 0, 0);
+      cam.updateMatrixWorld();
+    }
+
     // the model: lit, then as a flat white mask, then its visible edges
     // Product renders are lit by softboxes from the camera's side and above, so this is lit the same way for
     // every reference view, with the lab's own key and rim lights off (in the side view they would leave the
@@ -309,7 +351,8 @@ export async function createLab(name: string) {
     // The studio environment is halved too: the renders' backdrop is dark around the product, and at full
     // strength it fills every front-facing surface (dark spools read grey).
     const headlight = new THREE.DirectionalLight('#ffffff', 2.6); // tuned so the body's front matches the renders' tone
-    headlight.position.copy(cam.position).add(new THREE.Vector3(ref.view === 'front' ? 30 : 0, 145, ref.view === 'front' ? 0 : 30));
+    if (ref.view === 'persp') headlight.position.copy(cam.position).add(new THREE.Vector3(0, radius * 3, 0));
+    else headlight.position.copy(cam.position).add(new THREE.Vector3(ref.view === 'front' ? 30 : 0, 145, ref.view === 'front' ? 0 : 30));
     scene.add(headlight, headlight.target);
     key.visible = rim.visible = false;
     scene.environmentIntensity = 0.5;
@@ -358,7 +401,7 @@ export async function createLab(name: string) {
     }
     dx.putImageData(dd, 0, 0);
     const union = both + photoOnly + modelOnly;
-    const metrics = { ref: refName, iou: +(both / union).toFixed(4), photoOnlyPct: +((100 * photoOnly) / union).toFixed(2), modelOnlyPct: +((100 * modelOnly) / union).toFixed(2) };
+    const metrics = { ref: refName, iou: +(both / union).toFixed(4), photoOnlyPct: +((100 * photoOnly) / union).toFixed(2), modelOnlyPct: +((100 * modelOnly) / union).toFixed(2), ...(pose ? { pose } : {}) };
 
     // the sheet: four panels, side by side for tall subjects, two by two otherwise
     const ps = P / Math.max(NW, NH), PW = Math.round(NW * ps), PH = Math.round(NH * ps);
@@ -389,6 +432,88 @@ export async function createLab(name: string) {
     place(VIEWS[2]);
     renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
     return { ...metrics, file };
+  }
+
+  /**
+   * For a perspective reference: search camera poses (yaw round the model from its front, elevation,
+   * roll about the view axis, lens) for the one whose outline best matches the photo's, each candidate
+   * aligned to the photo by area and centroid; then return that camera with a view offset that applies
+   * the alignment, so it renders straight onto the photo.
+   */
+  function fitPose(photoMask: Uint8Array, NW: number, NH: number, yawRange: [number, number] = [-180, 165]) {
+    const S = 160 / Math.max(NW, NH), w0 = Math.round(NW * S), h0 = Math.round(NH * S);
+    const small = new Uint8Array(w0 * h0);
+    for (let y = 0; y < h0; y++) for (let x = 0; x < w0; x++) small[y * w0 + x] = photoMask[Math.floor(y / S) * NW + Math.floor(x / S)];
+    const moments = (m: Uint8Array, w: number, h: number) => {
+      let a = 0, sx = 0, sy = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (m[y * w + x]) { a++; sx += x; sy += y; }
+      return { a, cx: sx / Math.max(1, a), cy: sy / Math.max(1, a) };
+    };
+    const P = moments(small, w0, h0);
+    const target = new THREE.WebGLRenderTarget(w0, h0);
+    const buf = new Uint8Array(w0 * h0 * 4), m = new Uint8Array(w0 * h0);
+    const white = new THREE.MeshBasicMaterial({ color: '#fff', side: THREE.DoubleSide });
+    const bg = scene.background;
+    scene.background = new THREE.Color('#000');
+    scene.overrideMaterial = white;
+    const cam = new THREE.PerspectiveCamera(20, w0 / h0, radius / 50, radius * 80);
+    const aim = (yaw: number, elev: number, roll: number, fov: number) => {
+      cam.fov = fov;
+      const d = (radius / Math.sin(THREE.MathUtils.degToRad(fov / 2))) * 1.1;
+      const dir = model.front.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(yaw));
+      const e = THREE.MathUtils.degToRad(elev);
+      cam.position.copy(centre).add(new THREE.Vector3(dir.x * Math.cos(e), Math.sin(e), dir.z * Math.cos(e)).multiplyScalar(d));
+      cam.up.set(0, 1, 0);
+      cam.lookAt(centre);
+      cam.rotateZ(THREE.MathUtils.degToRad(roll));
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    };
+    const score = (yaw: number, elev: number, roll: number, fov: number) => {
+      aim(yaw, elev, roll, fov);
+      cam.clearViewOffset();
+      renderer.setRenderTarget(target);
+      renderer.render(scene, cam);
+      renderer.readRenderTargetPixels(target, 0, 0, w0, h0, buf);
+      for (let y = 0; y < h0; y++) for (let x = 0; x < w0; x++) m[y * w0 + x] = buf[((h0 - 1 - y) * w0 + x) * 4] > 127 ? 1 : 0;
+      const M = moments(m, w0, h0);
+      if (!M.a) return { iou: 0, s: 1, M };
+      const s = Math.sqrt(P.a / M.a);
+      let both = 0;
+      for (let y = 0; y < h0; y++) for (let x = 0; x < w0; x++) {
+        if (!small[y * w0 + x]) continue;
+        const mx = Math.round((x - P.cx) / s + M.cx), my = Math.round((y - P.cy) / s + M.cy);
+        if (mx >= 0 && my >= 0 && mx < w0 && my < h0 && m[my * w0 + mx]) both++;
+      }
+      return { iou: both / (2 * P.a - both), s, M };
+    };
+    let best = { yaw: 0, elev: 30, roll: 0, fov: 20, iou: -1 };
+    const tryAll = (yaws: number[], elevs: number[], rolls: number[], fovs: number[]) => {
+      for (const fov of fovs) for (const yaw of yaws) for (const elev of elevs) for (const roll of rolls) {
+        const r = score(yaw, elev, roll, fov);
+        if (r.iou > best.iou) best = { yaw, elev, roll, fov, iou: r.iou };
+      }
+    };
+    const range = (a: number, b: number, step: number) => { const o: number[] = []; for (let v = a; v <= b + 1e-9; v += step) o.push(v); return o; };
+    tryAll(range(yawRange[0], yawRange[1], 15), range(0, 80, 10), range(-45, 45, 15), [20]);
+    for (const [step, span, fovs] of [[5, 10, [12, 20, 32]], [2, 4, [best.fov]], [1, 2, [best.fov * 0.85, best.fov, best.fov * 1.15]]] as [number, number, number[]][]) {
+      const b = { ...best };
+      tryAll(range(b.yaw - span, b.yaw + span, step), range(b.elev - span, b.elev + span, step), range(b.roll - span, b.roll + span, step), fovs);
+    }
+    // the winning pose, with the alignment as a view offset at full size
+    const r = score(best.yaw, best.elev, best.roll, best.fov);
+    renderer.setRenderTarget(null);
+    target.dispose();
+    white.dispose();
+    scene.overrideMaterial = null;
+    scene.background = bg;
+    aim(best.yaw, best.elev, best.roll, best.fov);
+    cam.aspect = NW / NH;
+    const k = NW / w0; // full-size pixels per search pixel
+    cam.setViewOffset(NW, NH, (r.M.cx - P.cx / r.s) * k, (r.M.cy - P.cy / r.s) * k, NW / r.s, NH / r.s);
+    cam.updateProjectionMatrix();
+    const pose = `yaw ${best.yaw.toFixed(0)}, elevation ${best.elev.toFixed(0)}, roll ${best.roll.toFixed(0)}, fov ${best.fov.toFixed(1)} (search IoU ${best.iou.toFixed(3)})`;
+    return { cam, pose };
   }
 
   // __labScene: the scene itself, for poking at parts from the console (hide one, look again)

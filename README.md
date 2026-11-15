@@ -20,14 +20,20 @@ pnpm build && pnpm start
 - `lib/scene/after-hours.ts`: the scene itself: lights, camera shots and glides, the monitor and laptop screens, hotspots.
 - `lib/scene/props/`: every prop, built in code from primitives; no model files.
   `index.ts` lays out the desk and merges the static parts by material, so the whole desk draws in a few calls.
-  - `desk.ts` (white standing desk, and a mat printed with liquid marble), `monitor.ts` (27" OLED on a V-shaped stand), `keyboard.ts`
+  - `desk.ts` (white standing desk, and a mat printed with liquid marble), `monitor.ts` (Gigabyte AORUS FO27Q3, from its measured spec: the thin
+    QD-OLED panel and its chin, the faceted housing and light strip, and the leaning pillar on its
+    two-legged base, the head slid down to the desk's height), `keyboard.ts`
     (Rama U80-A in Milk: solid top case with a cutout per key cluster, sculpted keycaps), `mouse.ts`
-    (Sora V2, one sculpted shell), `macbook.ts` (MacBook Pro 14-inch with the PROLED XDR display, in
+    (Ninjutso Sora V2 in white, from its measured spec: one shell over the measured plan and profile, with
+    the section fitted to where its splits run, the nose undercut and tail chamfer, wheel, side buttons,
+    logos, and skates traced off the underside), `macbook.ts` (MacBook Pro 14-inch with the PROLED XDR display, in
     Space Black, from its measured spec: the base and lid are lofted from the edge profile measured off
     Apple's renders, with the finger scoop cut into the front edge; the 78 keys where they measure, with
     their legends and function-row icons, the trackpad, grilles, ports with MagSafe's pins, intake slots,
     feet, Dynamic Island, and the site's terminal on the panel),
-    `pc.ts` (Cooler Master NR200P), `chair.ts` (Secretlab
+    `pc.ts` (Cooler Master NR200P MAX V2 in grey, from its measured spec: the front cover with its
+    rounded edges and badge, a black top with its mesh and recessed I/O tray, and the right panel cut
+    with all 414 holes of its Ncore pattern, generated from a rule fitted to the build guide's drawing), `chair.ts` (Secretlab
     TITAN Evo: padded parts built as cushions, with the Evo's arched head, wings and tone-on-tone panel),
     `snorlax.ts` (blocky Snorlax), `pothos.ts`, `tableware.ts` (coffee in a hand-thrown mug on a walnut
     coaster in front of the printer, and a donut on a matching plate; both in a reactive indigo glaze that
@@ -39,8 +45,8 @@ pnpm build && pnpm start
     glass, so it never passes through it; the bottle, wax and glass are self-lit (matcaps and
     vertex-coloured glow), and its light is the scene's key light.
 - `lib/scene/p2s.ts`: the P2S and AMS 2 Pro, printing a tiny garage.
-- `lib/scene/specs/`: measured specs (millimetres, with sources) that the printer, the lava lamp and the
-  MacBook are built from, plus the dimension checks and reference-image calibrations the lab uses.
+- `lib/scene/specs/`: measured specs (millimetres, with sources) that the printer, the lava lamp, the
+  MacBook, the mouse, the PC and the monitor are built from, plus the dimension checks and reference-image calibrations the lab uses.
 - `lib/scene/geometry.ts`: merge-by-material and teardown helpers.
 
 ## Notes
@@ -74,13 +80,14 @@ pnpm build && pnpm start
   motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` runs
   the scene as if reduced motion were off, even when the OS asks for it. `__state()` reports the boot phase, the log
   and the camera.
-- Add `?lab=keyboard` (or `macbook`, `macbook-closed`, `printer`, `printer-bare`, `chair`, `lava`,
+- Add `?lab=keyboard` (or `macbook`, `macbook-closed`, `mouse`, `pc`, `monitor`, `printer`, `printer-bare`, `chair`, `lava`,
   `tableware`) to see one prop on its own in studio light, for checking it against product photos
   (`lib/scene/lab.ts`, loaded only on that URL). `__labView(i)` jumps to a fixed view;
-  `__labCapture('v1')` renders six views and a hero shot and posts them as PNGs to a local receiver on
+  `__labCapture('v1')` renders six views, a hero shot and a view from below and posts them as PNGs to a local receiver on
   `?save=<port>` (default 8799). For props with a spec, `__labCheck()` lists every spec'd dimension
   measured off the built parts, and `__labOverlay('side', 'v1')` lines the model up with a straight-on
   reference image (fetched from the same receiver, so the images stay out of the repo) and reports the
   outline overlap (IoU), with a sheet of the photo with the model's edges, the outline difference and a
-  blend. References can be front, side (left or right) or top-down views.
+  blend. References can be front, back, side (left or right) or top-down views, or a perspective render, for
+  which the lab first searches for the camera (yaw, elevation, roll and lens) that lines the outlines up best.
 

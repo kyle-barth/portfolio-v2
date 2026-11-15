@@ -73,8 +73,14 @@ export const P2S = {
  * the repo; the lab fetches them from the local receiver (?save=<port>, served from its reference folder).
  */
 export type RefImage = {
-  file: string; view: 'front' | 'left' | 'right' | 'top'; mmPerPx: number; cx: number; floorY: number;
-  up?: 'back' | 'front'; // seen from above: the edge at the top of the image (floorY is then the row of z = 0)
+  // 'persp': a perspective render from an unknown camera; the lab searches for the pose that lines the
+  // model's outline up best (mmPerPx, cx and floorY are then unused)
+  file: string; view: 'front' | 'back' | 'left' | 'right' | 'top' | 'persp'; mmPerPx: number; cx: number; floorY: number;
+  channel?: 'r'; // product is where the red channel exceeds thr (a white product on a saturated blue backdrop)
+  yaw?: [number, number]; // persp: where to look for the camera round the model, degrees from its front (a box looks alike from opposite corners)
+  up?: '-z' | '+z'; // seen from above: the world direction at the top of the image (floorY is then the row of z = 0)
+  thr?: number; // how far from the backdrop's colour counts as product (default 18; lower for a dark product on black)
+  fill?: 'down'; // side views lit only along the top: everything under the outline is product
   ams?: boolean; // printer refs: shows the AMS on top
   roi?: [number, number, number, number]; // x0, y0, x1, y1: compare only this part of the image
 };
