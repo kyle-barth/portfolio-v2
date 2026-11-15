@@ -51,8 +51,9 @@ pnpm build && pnpm start
   desk going up a prop at a time, the MacBook download, and shader compiles. When everything has loaded,
   the lamp comes on and the camera pulls back from the monitor to the shot for the section in view. Only
   then does the page come in: the heading, its lines, then the nav, on small staggered delays. With
-  reduced motion on, the pull-back is a quick fade and cut, and the page only fades in. If the scene
-  stalls, the page is shown anyway after 15 seconds on screen.
+  reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine ease (well under
+  half the top speed), and the page only fades in. If the scene stalls, the page is shown anyway after
+  15 seconds on screen.
 - Every shader is compiled before the camera moves, a few at a time while the log runs, and the desk
   stays out of sight (an empty layer mask, lights included) until they are ready. Otherwise the first
   frame that draws something compiles its shader on the spot, and the boot log freezes or the pull-back
@@ -69,8 +70,8 @@ pnpm build && pnpm start
 - Add `?debug` to the URL to get `__step(n)` (advance n frames) and `__setShot(i, shot, phone?)` (try a
   camera shot) in the console. Handy when tuning framing, or when a background tab is not painting.
   `__slow(f)` (or `&slow=0.2`) runs the scene clock and the page's entrance at f times speed, to check
-  motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` plays
-  the full flight even when the OS asks for reduced motion. `__state()` reports the boot phase, the log
+  motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` runs
+  the scene as if reduced motion were off, even when the OS asks for it. `__state()` reports the boot phase, the log
   and the camera.
 - Add `?lab=keyboard` (or `macbook`, `macbook-built`, `printer`, `printer-bare`, `chair`, `lava`,
   `tableware`) to see one prop on its own in studio light, for checking it against product photos

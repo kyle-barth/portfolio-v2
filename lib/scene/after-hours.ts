@@ -69,6 +69,7 @@ const PHONE_QUERY = '(max-width: 760px), (max-aspect-ratio: 9/10)';
 const easeOut = (k: number) => 1 - Math.pow(1 - k, 5); // close to cubic-bezier(0.23, 1, 0.32, 1)
 // strong ease-in-out for on-screen movement, close to cubic-bezier(0.77, 0, 0.175, 1)
 const easeInOut = (k: number) => (k < 0.5 ? 8 * k ** 4 : 1 - (-2 * k + 2) ** 4 / 2);
+const easeInOutSine = (k: number) => (1 - Math.cos(Math.PI * k)) / 2;
 
 export function createAfterHours(o: AfterHoursOptions) {
   const { canvas, sections, boot, tip, person, jobs, projects } = o;
@@ -494,9 +495,11 @@ export function createAfterHours(o: AfterHoursOptions) {
   let shotIdx = Math.round(stage);
   let glideAt = -Infinity;
   const GLIDE = reduce ? 1.0 : 1.8; // seconds; shorter and gentler when reduced motion is on
-  // the pull-back from the monitor; with reduced motion it is a cut, hidden by a quick fade of the canvas
-  const FLIGHT = reduce ? 0 : 2.4;
-  let glideDur = GLIDE, phase: Phase = 'boot', loaded = false, revealed = false, cutReady = !reduce;
+  // the pull-back from the monitor to the first shot. With reduced motion it still plays (the page
+  // starts from the monitor), on a sine ease: no hard push off, and well under half the top speed
+  const FLIGHT = 2.4;
+  const flightEase = reduce ? easeInOutSine : easeInOut;
+  let glideDur = GLIDE, phase: Phase = 'boot', loaded = false, revealed = false;
   const sph = new THREE.Spherical();
 
   const pointer = { x: 0, y: 0, sx: 0, sy: 0, px: -1, py: -1 };
@@ -767,10 +770,6 @@ export function createAfterHours(o: AfterHoursOptions) {
       copyCam(from, cam);
       glideAt = t;
       glideDur = FLIGHT;
-      if (reduce) {
-        canvas.style.opacity = '0'; // fade out, cut to the shot, fade back in
-        window.setTimeout(() => { cutReady = true; canvas.style.opacity = ''; }, 220);
-      }
     }
 
     const e = lampAt < 0 ? -1 : t - lampAt;
@@ -783,7 +782,7 @@ export function createAfterHours(o: AfterHoursOptions) {
     // camera: square on to the monitor while booting; then glide to the shot of the section in view
     // (a little hysteresis stops boundary bounce)
     let k = 1;
-    if (phase === 'boot' || !cutReady) bootPose(W / H, phone, cam);
+    if (phase === 'boot') bootPose(W / H, phone, cam);
     else {
       if (Math.abs(stage - shotIdx) > 0.55) {
         copyCam(from, cam);
@@ -793,7 +792,8 @@ export function createAfterHours(o: AfterHoursOptions) {
         if (!look.dragging && (look.theta || look.phi)) lookBack(t, GLIDE); // a new section starts from its own shot
       }
       shotFor(shotIdx, set, W / H, want);
-      k = glideDur > 0 ? easeInOut(Math.min(1, (t - glideAt) / glideDur)) : 1;
+      const ease = phase === 'flight' && glideDur === FLIGHT ? flightEase : easeInOut;
+      k = glideDur > 0 ? ease(Math.min(1, (t - glideAt) / glideDur)) : 1;
       if (k >= 1) copyCam(cam, want);
       else {
         let dT = want.theta - from.theta;
