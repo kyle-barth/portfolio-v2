@@ -1,7 +1,8 @@
 // Rama Works U80-A in Milk (white): a WKL TKL in a one-piece wedge case with thin, even bezels, softly
 // rounded corners and a crisp chamfered top edge. The top of the case is solid, with a tight cutout
-// for each cluster of keys (Esc, the three F groups, PrtSc-Pause, alphas, nav block, arrows) over a dark plate. Underneath: a mirror-finish
-// weight across the back, rubber foot strips front and back, and four screws.
+// for each cluster of keys (Esc, the three F groups, PrtSc-Pause, alphas, nav block, arrows) over a
+// dark plate. A polished brass weight bar runs under the back, its ends showing in a window low on
+// each side. Underneath: rubber foot strips front and back, and four screws.
 // Keycaps are a sculpted Cherry-style set with dished tops: cream alphas, charcoal modifiers, orange
 // Esc and Enter. Front (the spacebar side) faces +z. Units: 1 = 160 mm.
 import * as THREE from 'three';
@@ -140,8 +141,17 @@ export function buildKeyboard() {
   // the small notch in the middle of the back edge
   box(g, 0.07, 0.014, 0.02, std('#c9c8c3', 0.5), [0, rimY(-CD / 2) + 0.004, -CD / 2 + 0.012]);
 
-  // underneath: mirror weight across the back, rubber strips front and back, four screws
-  box(g, CW * 0.92, 0.004, 0.2 * CD, reflective(std('#c58a5a', 0.08, 1), 1.2), [0, -0.002, -CD / 2 + 0.12 * CD + 0.1 * CD]);
+  // The brass weight: a bar under the back of the case, 18.5 to 49 mm in from the back edge and the full
+  // width (Rama's straight-down render of the underside). Its ends show through a window cut up from the
+  // bottom of each side wall, 16 mm high (about half the wall there, from a photo of the side), flush
+  // with the wall; its underside sits just proud of the base. Mirror-polished PVD brass.
+  // (a touch less than mirror, and a little diffuse, so at night it catches the room's lights as warm
+  // gold instead of reflecting the dark room as a black slot)
+  const brass = reflective(std('#e3b86e', 0.32, 0.6), 1.4);
+  const W0 = 0.12 * CD, W1 = 0.32 * CD, WH = 0.1;
+  box(g, CW + 2 * B + 0.0016, WH + 0.004, W1 - W0, brass, [0, (WH - 0.004) / 2, -CD / 2 + (W0 + W1) / 2]);
+
+  // underneath: rubber strips front and back, four screws
   for (const z of [-CD / 2 + 0.07, CD / 2 - 0.07]) box(g, CW * 0.8, 0.008, 0.035, std('#1a1a1c', 0.9), [0, -0.004, z]);
   for (const x of [-CW / 2 + 0.12, CW / 2 - 0.12]) for (const z of [-0.08, 0.12]) cyl(g, 0.018, 0.018, 0.004, std('#9aa0a8', 0.35, 0.8), [x, -0.002, z], undefined, 12);
   return g;
