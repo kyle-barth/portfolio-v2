@@ -1,15 +1,20 @@
 // The After Hours scene: Kyle's desk at night, lit by a lava lamp that switches on as the page opens.
-// Each section has a camera shot; when the section in view changes, the camera glides to the new
-// shot on a timed ease (so scroll speed never makes it jump). Dragging with a mouse turns the camera
-// around the shot, and it eases back after a few idle seconds. The monitor shows code, then the picked
-// project, then a git log of jobs, then contact details. createAfterHours() builds it and tears it down.
+// It boots: the monitor is built and lit first, close up, running a terminal that reports what is
+// loading (three.js, the desk prop by prop, the MacBook file, the shaders). When all of it is ready the
+// lava lamp flickers on and the camera pulls back from the monitor to the section's shot; only then is
+// the page brought in (onReveal). After that, each section has a camera shot; when the section in view
+// changes, the camera glides to the new shot on a timed ease (so scroll speed never makes it jump).
+// Dragging with a mouse turns the camera around the shot, and it eases back after a few idle seconds.
+// The monitor shows code, then the picked project, then a git log of jobs, then contact details.
+// createAfterHours() builds it and tears it down.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { Job, Person, Project } from '@/data/content';
 import { measureAnchors, stageAt } from '@/lib/scroll-stage';
 import { disposeTree } from './geometry';
-import { LAYOUT, MONITOR_SCREEN, buildDeskScene, mountLaptop } from './props';
+import { LAYOUT, MONITOR_SCREEN, buildBootMonitor, buildDeskScene, mountLaptop } from './props';
+import { MONITOR } from './props/monitor';
 import { buildMacBook, loadMacBook } from './props/macbook';
 import { nightEnvironment } from './props/night-env';
 import { MUG_RIM } from './props/tableware';
@@ -18,13 +23,20 @@ import { DESK } from './props/desk';
 export type AfterHoursOptions = {
   canvas: HTMLCanvasElement;
   sections: HTMLElement[];
-  loader: { root: HTMLElement; bar: HTMLElement; text: HTMLElement };
+  /** The page's own boot prompt (shown until the monitor's first frame) and a line for errors. */
+  boot: { root: HTMLElement; note: HTMLElement };
+  /** performance.now() when the page started fetching the scene, to report the download. */
+  bootStart: number;
+  /** Called once, when the camera has pulled back from the monitor (or the desk could not start). */
+  onReveal: () => void;
   tip: HTMLElement;
   monoFamily: string;
   person: Person;
   jobs: Job[];
   projects: Project[];
   initialProject?: number;
+  /** Overrides the prefers-reduced-motion setting (debug: ?motion=full to check the flight on a machine that asks for less motion). */
+  reduceMotion?: boolean;
 };
 
 type Vec3 = readonly [number, number, number];
@@ -50,7 +62,8 @@ const RAW_SHOTS: Record<'wide' | 'phone', readonly { t: Vec3; o: Vec3; fov: numb
 };
 
 const MODES = ['code', 'project', 'log', 'contact'] as const;
-type Mode = (typeof MODES)[number];
+type Mode = (typeof MODES)[number] | 'boot';
+type Phase = 'boot' | 'flight' | 'live'; // the boot log, the pull-back from the monitor, then the page
 
 const PHONE_QUERY = '(max-width: 760px), (max-aspect-ratio: 9/10)';
 const easeOut = (k: number) => 1 - Math.pow(1 - k, 5); // close to cubic-bezier(0.23, 1, 0.32, 1)
@@ -58,8 +71,8 @@ const easeOut = (k: number) => 1 - Math.pow(1 - k, 5); // close to cubic-bezier(
 const easeInOut = (k: number) => (k < 0.5 ? 8 * k ** 4 : 1 - (-2 * k + 2) ** 4 / 2);
 
 export function createAfterHours(o: AfterHoursOptions) {
-  const { canvas, sections, loader, tip, person, jobs, projects } = o;
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const { canvas, sections, boot, tip, person, jobs, projects } = o;
+  const reduce = o.reduceMotion ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const phoneQ = window.matchMedia(PHONE_QUERY);
   const MONO = o.monoFamily || 'ui-monospace, Menlo, monospace';
   const cleanups: (() => void)[] = [];
@@ -74,8 +87,12 @@ export function createAfterHours(o: AfterHoursOptions) {
   let stage = stageAt(anchors);
   let pointerDirty = false;
   on('scroll', () => { stage = stageAt(anchors); pointerDirty = true; }, { passive: true });
-  // section positions move when fonts swap or content reflows, not only on window resize
-  const ro = new ResizeObserver(() => { anchors = measureAnchors(sections); stage = stageAt(anchors); });
+  // section positions move when fonts swap or content reflows, not only on window resize; and a
+  // scrollbar coming or going changes the canvas's width without one
+  const ro = new ResizeObserver(() => {
+    if (document.documentElement.clientWidth !== W) resize();
+    else { anchors = measureAnchors(sections); stage = stageAt(anchors); }
+  });
   ro.observe(document.body);
   cleanups.push(() => ro.disconnect());
 
@@ -147,7 +164,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   scrTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // the screens sit a hair in front of their bezels; pull them forward in depth so they never z-fight
   const ON_TOP = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
-  const screenMat = new THREE.MeshBasicMaterial({ map: scrTex, color: 0x000000, toneMapped: false, ...ON_TOP });
+  const screenMat = new THREE.MeshBasicMaterial({ map: scrTex, toneMapped: false, ...ON_TOP });
 
   const LW = 512, LH = 330; // the MacBook's 1.54:1 panel
   const lap = newCanvas(LW, LH);
@@ -155,8 +172,6 @@ export function createAfterHours(o: AfterHoursOptions) {
   const lapTex = new THREE.CanvasTexture(lap);
   lapTex.colorSpace = THREE.SRGBColorSpace;
   const lapMat = new THREE.MeshBasicMaterial({ map: lapTex, color: 0x000000, toneMapped: false, ...ON_TOP });
-  // the MacBook is a model file: start fetching it now, while the rest of the desk is built
-  const laptopFile = loadMacBook(lapMat);
 
   const C = { bg: '#0a0f1f', bar: '#121a33', gutter: '#3a4566', fg: '#d8def0', mute: '#5d6787', key: '#ffb869', str: '#a7e3b8', prop: '#8fd3ff', num: '#f59fb1' };
   const codeLines: [string, string][][] = [
@@ -172,10 +187,40 @@ export function createAfterHours(o: AfterHoursOptions) {
   const tokColor: Record<string, string> = { c: C.mute, k: C.key, f: C.prop, p: C.fg, s: C.str, n: C.num };
   const codeLen = codeLines.reduce((n, l) => n + l.reduce((m, t) => m + t[1].length, 0) + 1, 0);
 
-  let mode: Mode = 'code', modeAt = 0, activeProject = o.initialProject ?? 0, projectAt = -10, dirty = true;
+  let mode: Mode = 'boot', modeAt = 0, activeProject = o.initialProject ?? 0, projectAt = -10, dirty = true;
   let typed = 0;
   let time = 0;
   const WIPE = 0.24; // seconds
+
+  /* ---------- Boot log: what is loading, live, on the monitor ---------- */
+  // Lines appear in order, at least BOOT_GAP apart, so a cached load still reads as a sequence; each
+  // shows a spinner and a live figure until its step is done.
+  type BootLine = { label: string; detail: string; done: boolean; shownAt: number };
+  const bootLines: BootLine[] = [];
+  const BOOT_GAP = reduce ? 0.12 : 0.22;
+  function bootLine(label: string, detail = '') {
+    const l: BootLine = { label, detail, done: false, shownAt: -1 };
+    bootLines.push(l);
+    dirty = true;
+    return {
+      set(d: string) { if (!l.done) { l.detail = d; dirty = true; } },
+      done(d = l.detail) { l.detail = d; l.done = true; dirty = true; },
+    };
+  }
+  /** Every line is done and on screen, and the last has had a moment to be read. */
+  const bootSettled = (t: number) => bootLines.length > 0 && bootLines.every((l) => l.done && l.shownAt >= 0) && t - bootLines[bootLines.length - 1].shownAt > BOOT_GAP * 2;
+  const mb = (bytes: number) => (bytes / 1e6).toFixed(1);
+  // three.js and the scene code arrived as scripts after bootStart: report how much came down
+  {
+    const kb = performance.getEntriesByType('resource')
+      .filter((e) => (e as PerformanceResourceTiming).initiatorType === 'script' && e.startTime >= o.bootStart - 1)
+      .reduce((n, e) => n + ((e as PerformanceResourceTiming).transferSize || (e as PerformanceResourceTiming).encodedBodySize || 0), 0) / 1024;
+    bootLine(`three.js r${THREE.REVISION}`).done(kb > 1 ? `${Math.round(kb)} KB` : 'cached');
+  }
+  const deskLine = bootLine('building the desk');
+  const macLine = bootLine('macbook-pro-14.glb');
+  // the MacBook is a model file: start fetching it now, while the rest of the desk is built
+  const laptopFile = loadMacBook(lapMat, (loaded, total) => macLine.set(total ? `${mb(loaded)} / ${mb(total)} MB` : `${mb(loaded)} MB`));
 
   // Each project's screen is rendered once into its own canvas, then wiped onto the monitor.
   const shots: ([HTMLImageElement, HTMLImageElement | null] | null)[] = projects.map(() => null);
@@ -313,6 +358,28 @@ export function createAfterHours(o: AfterHoursOptions) {
     for (const l of lines) { let x = 30; for (const [s, c] of l) { sx.fillStyle = c; sx.fillText(s, x, y); x += sx.measureText(s).width; } y += 52; }
     cursor(30, y, t);
   }
+  function drawBoot(t: number) {
+    sx.fillStyle = C.bg; sx.fillRect(0, 0, SW, SH); chrome('zsh  ~/kyle-barth.dev');
+    sx.font = `500 32px ${MONO}`;
+    let y = 112;
+    sx.fillStyle = C.key; sx.fillText('$', 34, y); sx.fillStyle = C.fg; sx.fillText('./after-hours --lights-off', 70, y);
+    y += 70;
+    for (let i = 0; i < bootLines.length; i++) {
+      const l = bootLines[i], prev = bootLines[i - 1];
+      if (l.shownAt < 0) {
+        if (prev && (prev.shownAt < 0 || t - prev.shownAt < BOOT_GAP)) break;
+        l.shownAt = t;
+      }
+      sx.globalAlpha = Math.min(1, (t - l.shownAt) / 0.15);
+      if (l.done) { sx.fillStyle = C.str; sx.fillText('✓', 34, y); }
+      else { sx.strokeStyle = C.key; sx.lineWidth = 3.5; sx.beginPath(); sx.arc(47, y - 11, 10, t * 7, t * 7 + 4.4); sx.stroke(); }
+      sx.fillStyle = C.fg; sx.fillText(l.label, 78, y);
+      sx.fillStyle = l.done ? C.mute : C.prop; sx.textAlign = 'right'; sx.fillText(l.detail, SW - 34, y); sx.textAlign = 'left';
+      sx.globalAlpha = 1;
+      y += 62;
+    }
+    if (bootSettled(t)) { sx.fillStyle = C.key; sx.fillText('$', 34, y); cursor(70, y, t); }
+  }
   function drawLaptop() {
     lx.fillStyle = '#0b0d18'; lx.fillRect(0, 0, LW, LH);
     lx.font = `500 17px ${MONO}`;
@@ -333,11 +400,49 @@ export function createAfterHours(o: AfterHoursOptions) {
     activeProject = i; projectAt = time; dirty = true;
   }
 
-  /* ---------- The desk ---------- */
+  /* ---------- The desk: the monitor first, then everything else, a prop a frame ---------- */
   const env = nightEnvironment(renderer);
   cleanups.push(() => env.dispose());
-  const desk = buildDeskScene({ reduce, lowPower, monitorScreen: screenMat, env: env.texture });
-  scene.add(desk.root);
+  const bootMonitor = buildBootMonitor(screenMat, env.texture);
+  scene.add(bootMonitor);
+  let desk: Awaited<ReturnType<typeof buildDeskScene>> | null = null;
+  const nextFrame = () => new Promise<void>((ok) => requestAnimationFrame(() => ok()));
+  let deskParts = 0;
+  const deskBuilt = nextFrame()
+    .then(() => buildDeskScene({
+      reduce, lowPower, monitorScreen: screenMat, env: env.texture, yieldFrame: nextFrame,
+      onStep: (d, n, label) => { deskParts = n; deskLine.set(`${label}  ${d}/${n}`); },
+    }))
+    .then((d) => {
+      if (disposed) return d;
+      desk = d;
+      // In the scene (its lights count) but out of sight until precompile() has its shaders ready: the
+      // first frame that drew it would compile them all at once and freeze the log. The boot monitor
+      // stands in for its monitor meanwhile. The lamp's shadow pass waits for the unveiling as well.
+      veil(d.root);
+      scene.add(d.root);
+      deskLine.done(`${deskParts} props`);
+      return d;
+    });
+  // Its lights are veiled too: a new light changes the shaders of everything already in sight (the boot
+  // monitor, the wall), and those would compile on the spot. precompile() lets them back in while it
+  // works, so what it builds is lit by them.
+  const veiled: [THREE.Object3D, number][] = [];
+  const veiledLights: [THREE.Object3D, number][] = [];
+  function veil(root: THREE.Object3D) {
+    root.traverse((o) => { if (o.layers.mask) { ((o as THREE.Light).isLight ? veiledLights : veiled).push([o, o.layers.mask]); o.layers.mask = 0; } });
+  }
+  function lightsIn(on: boolean) { for (const [l, mask] of veiledLights) l.layers.mask = on ? mask : 0; }
+  /** The desk comes into sight in place of the boot monitor (same monitor, same place, so no seam). */
+  function unveil() {
+    lightsIn(true);
+    veiledLights.length = 0;
+    for (const [o, mask] of veiled.splice(0)) o.layers.mask = mask;
+    if (bootMonitor.parent) {
+      scene.remove(bootMonitor);
+      bootMonitor.traverse((m) => (m as THREE.Mesh).geometry?.dispose()); // its materials are shared with the desk
+    }
+  }
 
   /* ---------- Coffee steam ---------- */
   const dotCanvas = newCanvas(64, 64);
@@ -364,8 +469,15 @@ export function createAfterHours(o: AfterHoursOptions) {
   const SHOTS = { wide: toShots(RAW_SHOTS.wide), phone: toShots(RAW_SHOTS.phone) };
   const newCam = (): CamState => ({ target: new THREE.Vector3(), radius: 0, phi: 0, theta: 0, fov: 34, sx: 0, sy: 0 });
   const want = newCam(), from = newCam(), cam = newCam();
-  let camReady = false;
   const copyCam = (a: CamState, b: CamState) => { a.target.copy(b.target); a.radius = b.radius; a.phi = b.phi; a.theta = b.theta; a.fov = b.fov; a.sx = b.sx; a.sy = b.sy; };
+  /** Booting: square on to the monitor, its screen filling most of the view (the full width on phones). */
+  const BOOT_FOV = 34;
+  function bootPose(aspect: number, phone: boolean, out: CamState) {
+    const fill = phone ? 0.94 : 0.72, span = 2 * Math.tan(THREE.MathUtils.degToRad(BOOT_FOV / 2));
+    out.target.copy(MONITOR_SCREEN);
+    out.radius = Math.max(MONITOR.screenH / fill / span, MONITOR.screenW / fill / (span * aspect));
+    out.phi = Math.PI / 2; out.theta = 0; out.fov = BOOT_FOV; out.sx = 0; out.sy = 0;
+  }
   function shotFor(i: number, set: Shot[], aspect: number, out: CamState) {
     const s = set[Math.max(0, Math.min(set.length - 1, i))];
     const fit = set === SHOTS.wide
@@ -382,6 +494,9 @@ export function createAfterHours(o: AfterHoursOptions) {
   let shotIdx = Math.round(stage);
   let glideAt = -Infinity;
   const GLIDE = reduce ? 1.0 : 1.8; // seconds; shorter and gentler when reduced motion is on
+  // the pull-back from the monitor; with reduced motion it is a cut, hidden by a quick fade of the canvas
+  const FLIGHT = reduce ? 0 : 2.4;
+  let glideDur = GLIDE, phase: Phase = 'boot', loaded = false, revealed = false, cutReady = !reduce;
   const sph = new THREE.Spherical();
 
   const pointer = { x: 0, y: 0, sx: 0, sy: 0, px: -1, py: -1 };
@@ -393,7 +508,7 @@ export function createAfterHours(o: AfterHoursOptions) {
 
   let W = 1, H = 1;
   function resize() {
-    W = window.innerWidth;
+    W = document.documentElement.clientWidth || window.innerWidth; // the canvas is laid out inside any scrollbar
     H = window.visualViewport ? Math.max(window.innerHeight, window.visualViewport.height) : window.innerHeight;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, phoneQ.matches ? 1.5 : 1.75));
     renderer.setSize(W, H, false);
@@ -502,33 +617,114 @@ export function createAfterHours(o: AfterHoursOptions) {
     canvas.removeEventListener('lostpointercapture', onRelease);
   });
 
-  /* ---------- Place the MacBook, compile shaders, then switch the lava lamp on ---------- */
-  // Wait for the MacBook file so it is in the first frame and the lamp's shadow; if it fails or is
-  // slow, the built stand-in takes its place (and a late file is ignored).
+  /* ---------- Place the MacBook, compile shaders; the boot log then hands over to the pull-back ---------- */
+  // Wait for the MacBook file so it is in the pull-back and the lamp's shadow; if it fails or is slow,
+  // the built stand-in takes its place (and a late file is ignored).
   let laptopTimer = 0;
   cleanups.push(() => clearTimeout(laptopTimer));
   const laptop = Promise.race([
-    laptopFile.then((m) => m.root),
+    laptopFile.then((m) => { macLine.done(); return m.root; }),
     new Promise<never>((_, fail) => { laptopTimer = window.setTimeout(() => fail(new Error('slow')), 6000); }),
-  ]).catch(() => buildMacBook(lapMat).root);
+  ]).catch(() => { macLine.done('built-in stand-in'); return buildMacBook(lapMat).root; });
+
+  /**
+   * Compile every shader the desk needs before the camera moves, or the pull-back stalls each time
+   * something new comes into view. Two things matter. Programs are keyed on the render target as well
+   * as the material: with bloom, the scene draws into the renderer's half-float buffer (untone-mapped,
+   * linear), so compiling against the canvas builds variants that are never used. The lamp's shadow
+   * pass has programs of its own, one per kind of caster, which compile() never reaches, so stand-ins
+   * with the same distance material go through too. And a frame that draws something whose program
+   * isn't linked yet waits for it, so they compile a few at a time off to the side (the driver links
+   * them in parallel), and only ever get drawn once they're ready: the log keeps ticking throughout.
+   */
+  const IN_FLIGHT = 4;
+  async function precompile(light: THREE.Light, progress: (n: number) => void) {
+    const offscreen = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+    const jobs: { part: THREE.Object3D; target: THREE.WebGLRenderTarget | null }[] = [];
+    scene.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh || (o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as THREE.Sprite).isSprite) jobs.push({ part: o, target: bloom ? offscreen : null });
+    });
+    const proxies = light.castShadow ? shadowStandIns() : [];
+    for (const p of proxies) jobs.push({ part: p, target: offscreen }); // a shadow map is always a render target
+    const count = () => renderer.info.programs?.length ?? 0;
+    const start = count();
+    let flying: Promise<unknown>[] = [];
+    const land = async () => { await Promise.all(flying); flying = []; progress(count() - start); await nextFrame(); };
+    try {
+      for (const { part, target } of jobs) {
+        if (disposed) return;
+        // compile reaches the whole subtree, so the part's children sit out (they have their own turn)
+        const before = count(), prev = renderer.getRenderTarget(), kids = part.children;
+        part.children = [];
+        renderer.setRenderTarget(target);
+        lightsIn(true);
+        let ready: Promise<unknown>;
+        try { ready = renderer.compileAsync(part, camera, scene); } finally { lightsIn(false); renderer.setRenderTarget(prev); part.children = kids; }
+        if (count() === before) continue; // nothing new: its programs are built already
+        flying.push(ready);
+        if (flying.length >= IN_FLIGHT) await land();
+      }
+      if (flying.length) await land();
+    } finally {
+      offscreen.dispose();
+      for (const p of proxies) ((p as THREE.Mesh).material as THREE.Material).dispose();
+    }
+  }
+  /** A mesh per shadow caster with the distance material three's shadow pass will draw it with (see
+   *  getDepthMaterial in WebGLShadowMap: the side flips, and maps, alpha test and clipping carry over). */
+  function shadowStandIns() {
+    const flip: Record<number, THREE.Side> = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
+    const out: THREE.Object3D[] = [];
+    scene.traverseVisible((o) => {
+      const m = o as THREE.Mesh;
+      if (!o.castShadow || !m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || m.customDistanceMaterial) return;
+      for (const mat of ([] as THREE.Material[]).concat(m.material)) {
+        const src = mat as THREE.MeshStandardMaterial;
+        const d = new THREE.MeshDistanceMaterial({
+          side: mat.shadowSide ?? flip[mat.side],
+          map: src.map ?? null,
+          alphaMap: src.alphaMap ?? null,
+          alphaTest: mat.alphaToCoverage ? 0.5 : mat.alphaTest,
+          clipShadows: mat.clipShadows, clippingPlanes: mat.clippingPlanes, clipIntersection: mat.clipIntersection,
+          displacementMap: src.displacementMap ?? null, displacementScale: src.displacementScale ?? 1, displacementBias: src.displacementBias ?? 0,
+        });
+        d.visible = mat.visible;
+        const inst = m as THREE.InstancedMesh;
+        if (!inst.isInstancedMesh) { out.push(new THREE.Mesh(m.geometry, d)); continue; }
+        const twin = new THREE.InstancedMesh(m.geometry, d, inst.count);
+        twin.instanceColor = inst.instanceColor; // both are part of the program's key
+        twin.morphTexture = inst.morphTexture;
+        out.push(twin);
+      }
+    });
+    return out;
+  }
 
   let lampAt = -1;
-  loader.bar.style.transform = 'scaleX(1)';
-  laptop
-    .then((model) => {
+  let lampLine: ReturnType<typeof bootLine> | null = null;
+  Promise.all([deskBuilt, laptop])
+    .then(([d, model]) => {
       clearTimeout(laptopTimer);
       if (disposed) return;
-      mountLaptop(desk.laptopSlot, model, env.texture);
-      return renderer.compileAsync(scene, camera);
+      mountLaptop(d.laptopSlot, model, env.texture);
+      veil(d.laptopSlot);
+      const shaders = bootLine('compiling shaders');
+      return precompile(d.lava.light, (n) => shaders.set(`${n} programs`)).then(() => shaders.done(`${renderer.info.programs?.length ?? 0} programs`));
     })
     .then(() => {
-      if (disposed) return;
+      if (disposed || !desk) return;
+      unveil();
       desk.lava.light.shadow.needsUpdate = true;
-      ready = true;
-      lampAt = time;
-      loader.root.classList.add('done');
+      lampLine = bootLine('switching on the lava lamp');
+      loaded = true; // step() starts the pull-back once this line has been on screen
     })
-    .catch((err: Error) => { if (!disposed) loader.text.textContent = `The desk could not start: ${err.message}`; });
+    .catch((err: Error) => {
+      if (disposed) return;
+      unveil();
+      boot.note.textContent = `The desk could not start: ${err.message}`;
+      boot.root.classList.add('gone');
+      if (!revealed) { revealed = true; o.onReveal(); }
+    });
 
   // The one orchestrated moment: the bulb catches with two flickers, then the lamp warms up.
   function lampLevel(e: number) {
@@ -558,37 +754,66 @@ export function createAfterHours(o: AfterHoursOptions) {
   function step(dt: number) {
     time += dt;
     const t = time, phone = phoneQ.matches;
+    const set = phone ? SHOTS.phone : SHOTS.wide;
+
+    // boot -> flight: everything has loaded and the last line of the log has been read. The lamp
+    // flickers on as the camera pulls away from the monitor.
+    const last = bootLines[bootLines.length - 1];
+    if (phase === 'boot' && loaded && lampLine && last.shownAt >= 0 && t - last.shownAt > BOOT_GAP * 1.6) {
+      phase = 'flight';
+      lampAt = t;
+      lampLine.done('on');
+      shotIdx = Math.max(0, Math.min(set.length - 1, Math.round(stage)));
+      copyCam(from, cam);
+      glideAt = t;
+      glideDur = FLIGHT;
+      if (reduce) {
+        canvas.style.opacity = '0'; // fade out, cut to the shot, fade back in
+        window.setTimeout(() => { cutReady = true; canvas.style.opacity = ''; }, 220);
+      }
+    }
+
     const e = lampAt < 0 ? -1 : t - lampAt;
     const L = lampLevel(e);
-    const S = e < 0.45 ? 0 : easeOut(Math.min(1, (e - 0.45) / 0.3));
-    desk.lava.update(t, L, e > 1.5 ? flicker(t) : 1);
-    screenMat.color.setScalar(S);
-    lapMat.color.setScalar(S * 0.95);
+    const SL = e < 0.45 ? 0 : easeOut(Math.min(1, (e - 0.45) / 0.3)); // the laptop wakes with the lamp
+    desk?.lava.update(t, L, e > 1.5 ? flicker(t) : 1);
+    lapMat.color.setScalar(SL * 0.95);
     renderer.toneMappingExposure = 0.75 + 0.45 * L;
 
-    // camera: glide to the shot of the section in view (a little hysteresis stops boundary bounce)
-    const set = phone ? SHOTS.phone : SHOTS.wide;
-    if (Math.abs(stage - shotIdx) > 0.55) {
-      copyCam(from, cam);
-      shotIdx = Math.max(0, Math.min(set.length - 1, Math.round(stage)));
-      glideAt = t;
-      if (!look.dragging && (look.theta || look.phi)) lookBack(t, GLIDE); // a new section starts from its own shot
-    }
-    shotFor(shotIdx, set, W / H, want);
-    const k = camReady ? easeInOut(Math.min(1, (t - glideAt) / GLIDE)) : 1;
-    if (k >= 1) copyCam(cam, want);
+    // camera: square on to the monitor while booting; then glide to the shot of the section in view
+    // (a little hysteresis stops boundary bounce)
+    let k = 1;
+    if (phase === 'boot' || !cutReady) bootPose(W / H, phone, cam);
     else {
-      let dT = want.theta - from.theta;
-      if (dT > Math.PI) dT -= Math.PI * 2; else if (dT < -Math.PI) dT += Math.PI * 2;
-      cam.target.lerpVectors(from.target, want.target, k);
-      cam.radius = THREE.MathUtils.lerp(from.radius, want.radius, k);
-      cam.phi = THREE.MathUtils.lerp(from.phi, want.phi, k);
-      cam.theta = from.theta + dT * k;
-      cam.fov = THREE.MathUtils.lerp(from.fov, want.fov, k);
-      cam.sx = THREE.MathUtils.lerp(from.sx, want.sx, k);
-      cam.sy = THREE.MathUtils.lerp(from.sy, want.sy, k);
+      if (Math.abs(stage - shotIdx) > 0.55) {
+        copyCam(from, cam);
+        shotIdx = Math.max(0, Math.min(set.length - 1, Math.round(stage)));
+        glideAt = t;
+        glideDur = GLIDE;
+        if (!look.dragging && (look.theta || look.phi)) lookBack(t, GLIDE); // a new section starts from its own shot
+      }
+      shotFor(shotIdx, set, W / H, want);
+      k = glideDur > 0 ? easeInOut(Math.min(1, (t - glideAt) / glideDur)) : 1;
+      if (k >= 1) copyCam(cam, want);
+      else {
+        let dT = want.theta - from.theta;
+        if (dT > Math.PI) dT -= Math.PI * 2; else if (dT < -Math.PI) dT += Math.PI * 2;
+        cam.target.lerpVectors(from.target, want.target, k);
+        cam.radius = THREE.MathUtils.lerp(from.radius, want.radius, k);
+        cam.phi = THREE.MathUtils.lerp(from.phi, want.phi, k);
+        cam.theta = from.theta + dT * k;
+        cam.fov = THREE.MathUtils.lerp(from.fov, want.fov, k);
+        cam.sx = THREE.MathUtils.lerp(from.sx, want.sx, k);
+        cam.sy = THREE.MathUtils.lerp(from.sy, want.sy, k);
+      }
+      // landed: the desk is live, and the page comes in
+      if (phase === 'flight' && k >= 1) {
+        phase = 'live';
+        ready = true;
+        pointerDirty = true;
+        if (!revealed) { revealed = true; o.onReveal(); }
+      }
     }
-    camReady = true;
 
     // look-around: follow the drag closely; after a pause, ease back to the shot
     if (!look.dragging && look.backAt === -Infinity && (look.tTheta || look.tPhi) && t - look.releasedAt > LOOK_IDLE) lookBack(t, LOOK_BACK);
@@ -620,21 +845,21 @@ export function createAfterHours(o: AfterHoursOptions) {
     camera.updateProjectionMatrix();
     if (k < 1) pointerDirty = true;
 
-    // the monitor follows the section the camera is heading to
-    const m = MODES[shotIdx];
+    // the monitor runs the boot log until the camera lands, then follows the section in view
+    const m: Mode = phase === 'live' ? MODES[shotIdx] : 'boot';
     if (m !== mode) { mode = m; modeAt = t; dirty = true; }
-    if (mode === 'code' && S >= 1 && typed < codeLen) { typed = Math.min(codeLen, typed + dt * 38); dirty = true; }
+    if (mode === 'code' && typed < codeLen) { typed = Math.min(codeLen, typed + dt * 38); dirty = true; }
     // keep redrawing through the cross-fade into a mode, or a still project screen freezes half-faded
     const animating = mode !== 'project' || t - projectAt < WIPE + 0.05 || t - modeAt < 0.25;
     if (t - lastDraw > 0.045 && (dirty || animating)) {
-      if (mode === 'code') drawCode(t); else if (mode === 'project') drawProject(t); else if (mode === 'log') drawLog(t); else drawContact(t);
+      if (mode === 'boot') drawBoot(t); else if (mode === 'code') drawCode(t); else if (mode === 'project') drawProject(t); else if (mode === 'log') drawLog(t); else drawContact(t);
       const fade = Math.min(1, (t - modeAt) / 0.15);
       if (fade < 1) { sx.fillStyle = `rgba(5,7,13,${1 - fade})`; sx.fillRect(0, 0, SW, SH); }
       scrTex.needsUpdate = true; dirty = false; lastDraw = t;
     }
     glowTarget.copy((mode === 'project' && glows[activeProject]) || SCREEN_GLOW);
     screenLight.color.lerp(glowTarget, 1 - Math.exp(-dt * 4));
-    screenLight.intensity = (mode === 'project' ? 9 : 7) * S;
+    screenLight.intensity = mode === 'project' ? 9 : 7;
 
     // the mug steams, the printer prints
     for (let i = 0; i < steam.length; i++) {
@@ -643,7 +868,7 @@ export function createAfterHours(o: AfterHoursOptions) {
       sp.scale.setScalar(0.12 + life * 0.45);
       sp.material.opacity = Math.sin(life * Math.PI) * 0.09 * L;
     }
-    desk.printer.update(t, dt, L);
+    desk?.printer.update(t, dt, L);
 
     if (pointerDirty) updateHover();
     renderer.render(scene, camera);
@@ -651,12 +876,26 @@ export function createAfterHours(o: AfterHoursOptions) {
 
   const timer = new THREE.Timer();
   timer.connect(document);
-  renderer.setAnimationLoop(() => { timer.update(); step(Math.min(timer.getDelta(), 0.05)); });
+  let frames = 0, timeScale = 1;
+  renderer.setAnimationLoop(() => {
+    timer.update();
+    step(Math.min(timer.getDelta(), 0.05) * timeScale);
+    // the 3D monitor is up: the page's own boot prompt can go
+    if (++frames === 2) boot.root.classList.add('gone');
+  });
 
   return {
     selectProject,
     /** Advance the scene by n frames (handy for checking shots when the tab is not painting). */
     step: (n = 60) => { for (let i = 0; i < n; i++) step(1 / 30); },
+    /** Run the scene clock slower (0.25 = quarter speed), for checking motion frame by frame. */
+    slow: (f = 0.25) => { timeScale = f; },
+    /** Where the boot has got to and where the camera is (debug, and the e2e checks). */
+    state: () => ({
+      phase, mode, t: time, loaded, frames,
+      cam: { pos: camera.position.toArray(), fov: camera.fov, target: cam.target.toArray() },
+      lines: bootLines.map((l) => `${l.done ? 'ok' : '..'} ${l.label} ${l.detail}`.trim()),
+    }),
     /** Replace one camera shot while tuning framing (debug only). */
     setShot: (i: number, s: { t: Vec3; o: Vec3; fov: number; sx: number; sy: number }, phone = false) => {
       (phone ? SHOTS.phone : SHOTS.wide)[i] = toShots([s])[0];

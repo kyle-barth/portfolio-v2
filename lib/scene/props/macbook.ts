@@ -142,10 +142,11 @@ function fixDeck(model: THREE.Object3D) {
 /**
  * Fetches the model and fits it to the scene: metres to scene units, the deck and ports corrected,
  * Space Black, the file's own screen (a fake dock, icons and menu bar) swapped for `screenMaterial`,
- * and the notch kept in front of the screen.
+ * and the notch kept in front of the screen. `onProgress` gets bytes loaded and the total (0 if the
+ * server sends no length), for the boot log.
  */
-export async function loadMacBook(screenMaterial: THREE.Material) {
-  const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
+export async function loadMacBook(screenMaterial: THREE.Material, onProgress?: (loaded: number, total: number) => void) {
+  const gltf = await new GLTFLoader().loadAsync(MODEL_URL, (e) => onProgress?.(e.loaded, e.lengthComputable ? e.total : 0));
   const model = gltf.scene;
   model.scale.setScalar(PER_METRE);
 

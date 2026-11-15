@@ -66,22 +66,40 @@ export function mountLaptop(slot: THREE.Object3D, laptop: THREE.Object3D, env?: 
   if (env) applyReflections(merged, env);
 }
 
-export function buildDeskScene(opts: { reduce: boolean; lowPower: boolean; monitorScreen: THREE.Material; env?: THREE.Texture }) {
+/** The props in build order, each a label for the boot log and the work to place it. */
+const STEPS = (statics: THREE.Group, monitorScreen: THREE.Material): [string, () => void][] => [
+  ['desk and mat', () => { place(statics, buildDesk(), [0, 0, 0]); place(statics, buildDeskMat(), LAYOUT.mat); }],
+  ['monitor', () => place(statics, buildMonitor(monitorScreen).root, LAYOUT.monitor)],
+  ['keyboard', () => place(statics, buildKeyboard(), LAYOUT.keyboard)],
+  ['mouse', () => place(statics, buildMouse(), LAYOUT.mouse, -0.12)],
+  ['pc', () => place(statics, buildPC(), LAYOUT.pc)],
+  ['pothos', () => place(statics, buildPothos(), LAYOUT.pothos, 0.4)],
+  ['snorlax', () => place(statics, buildSnorlax(), LAYOUT.snorlax, 0.55)],
+  ['coffee', () => place(statics, buildMug(), LAYOUT.mug, -0.6)],
+  ['donut', () => place(statics, buildDonut(), LAYOUT.donut)],
+  ['chair', () => place(statics, buildChair(), LAYOUT.chair, -0.75)],
+];
+
+/**
+ * Build the desk a prop at a time, waiting for `yieldFrame()` between props so whatever is already on
+ * screen (the booting monitor) keeps animating, and reporting each step to `onStep`.
+ */
+export async function buildDeskScene(opts: {
+  reduce: boolean; lowPower: boolean; monitorScreen: THREE.Material; env?: THREE.Texture;
+  yieldFrame?: () => Promise<unknown>; onStep?: (done: number, total: number, label: string) => void;
+}) {
   const root = new THREE.Group();
   root.name = 'desk-scene';
   const statics = new THREE.Group();
-
-  place(statics, buildDesk(), [0, 0, 0]);
-  place(statics, buildDeskMat(), LAYOUT.mat);
-  place(statics, buildMonitor(opts.monitorScreen).root, LAYOUT.monitor);
-  place(statics, buildKeyboard(), LAYOUT.keyboard);
-  place(statics, buildMouse(), LAYOUT.mouse, -0.12);
-  place(statics, buildPC(), LAYOUT.pc);
-  place(statics, buildPothos(), LAYOUT.pothos, 0.4);
-  place(statics, buildSnorlax(), LAYOUT.snorlax, 0.55);
-  place(statics, buildMug(), LAYOUT.mug, -0.6);
-  place(statics, buildDonut(), LAYOUT.donut);
-  place(statics, buildChair(), LAYOUT.chair, -0.75);
+  const steps = STEPS(statics, opts.monitorScreen);
+  const total = steps.length + 2; // and the lava lamp and the printer, which stay live
+  const yieldFrame = opts.yieldFrame ?? (() => Promise.resolve());
+  let done = 0;
+  for (const [label, run] of steps) {
+    run();
+    opts.onStep?.(++done, total, label);
+    await yieldFrame();
+  }
 
   // lights can't be merged: lift them out to the scene at their world positions first
   statics.updateMatrixWorld(true);
@@ -98,11 +116,22 @@ export function buildDeskScene(opts: { reduce: boolean; lowPower: boolean; monit
 
   const lava = buildLavaLamp({ reduce: opts.reduce, lowPower: opts.lowPower });
   place(root, lava.root, LAYOUT.lava);
+  opts.onStep?.(++done, total, 'lava lamp');
+  await yieldFrame();
   const printer = buildP2S({ reduce: opts.reduce });
   place(root, printer.root, LAYOUT.printer, -0.12);
+  opts.onStep?.(++done, total, 'printer');
   if (opts.env) applyReflections(root, opts.env);
   // filled by mountLaptop() once the MacBook is ready
   const laptopSlot = place(root, new THREE.Group(), LAYOUT.macbook, 0.42);
 
   return { root, lava, printer, laptopSlot };
+}
+
+/** The monitor on its own, where the desk will put it: the first thing on screen while the rest builds. */
+export function buildBootMonitor(monitorScreen: THREE.Material, env?: THREE.Texture) {
+  const g = new THREE.Group();
+  place(g, buildMonitor(monitorScreen).root, LAYOUT.monitor);
+  if (env) applyReflections(g, env);
+  return g;
 }

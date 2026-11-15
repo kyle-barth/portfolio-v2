@@ -143,12 +143,60 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
 }
 .proj:focus-visible { box-shadow: inset 0 0 0 2px var(--lamp); }
 
-/* Loader + tooltip */
-.loader { position: fixed; z-index: 20; left: 0; right: 0; top: 0; height: 2px; pointer-events: none; transition: opacity 300ms var(--ease-out); }
-.loader b { display: block; height: 100%; background: linear-gradient(90deg, var(--lamp), var(--glow)); transform: scaleX(0); transform-origin: left; transition: transform 200ms var(--ease-out); }
-.loader small { position: fixed; right: max(var(--pad), env(safe-area-inset-right, 0px)); bottom: 24px; font-size: 14px; color: var(--muted); }
-.loader.done { opacity: 0; }
-.loader.done small { display: none; }
+/* Boot: the page opens on the desk's monitor booting while everything else loads (after-hours.ts);
+   until three.js is here this prompt stands in for it. Then the camera pulls back from the monitor,
+   and only then does the page come in: one entrance, the heading first, then its lines, then the
+   chrome, on --ease-out with small uneven delays. layout.tsx sets data-boot before the first paint
+   and desk-scene.tsx moves it on, so without JavaScript nothing is ever hidden. */
+/* The stand-in is the monitor's own first frame: its 1024×576 screen at the size and place the boot
+   camera shows it (bootPose: --fill of the viewport, centred), drawn in its units (--u = one canvas
+   pixel), so when the 3D monitor takes over the prompt doesn't move. */
+.boot { --fill: .72; position: fixed; inset: 0 0 auto; height: 100vh; height: 100lvh; z-index: 20; display: grid; place-items: center; pointer-events: none;
+  container-type: size; transition: opacity 240ms var(--ease-out), visibility 0s linear 240ms;
+  /* the monitor's palette as the desk renders it, measured off the canvas: the bloom pipeline tone-maps
+     the screen too (ACES at the boot exposure, 0.75), and the texture's filtering softens thin strokes,
+     so text reads dimmer than its colour; phones skip bloom, so there the panel colours come through as
+     drawn, though the smaller screen softens its text more */
+  background: var(--s-night); --s-night: #000002; --s-bg: #000107; --s-bar: #020518; --s-fg: #979aaa; --s-mute: #28314d; --s-key: #b17d41;
+  --s-red: #e56a65; --s-yellow: #dbc269; --s-green: #78cb90; }
+@media (max-width: 760px), (max-aspect-ratio: 9/10) {
+  .boot { --fill: .94; --s-night: #010104; --s-bg: #0a0f1f; --s-bar: #121a33; --s-fg: #8b8f9e; --s-mute: #3c4460; --s-key: #a27748;
+    --s-red: #ff6b6b; --s-yellow: #ffcf5c; --s-green: #5ce08b; }
+}
+.boot-screen { --u: calc(100cqw / 1024); position: relative; container-type: inline-size; aspect-ratio: 3.72 / 2.09;
+  width: min(calc(var(--fill) * 100cqw), calc(var(--fill) * 100cqh * 3.72 / 2.09));
+  background: var(--s-bg); font-family: var(--font-mono), ui-monospace, monospace; font-weight: 500; line-height: 1; }
+.boot-bar { position: absolute; inset: 0 0 auto; height: calc(46 * var(--u)); background: var(--s-bar); }
+.boot-bar span { position: absolute; top: calc(16.5 * var(--u)); left: calc(19.5 * var(--u)); width: calc(13 * var(--u)); aspect-ratio: 1; border-radius: 50%; background: var(--s-red); }
+.boot-bar span:nth-child(2) { left: calc(41.5 * var(--u)); background: var(--s-yellow); }
+.boot-bar span:nth-child(3) { left: calc(63.5 * var(--u)); background: var(--s-green); }
+.boot-bar em { position: absolute; inset: calc(11 * var(--u)) calc(110 * var(--u)) auto; height: calc(24 * var(--u)); border-radius: calc(12 * var(--u));
+  display: grid; place-items: center; background: var(--s-bg); color: var(--s-mute); font-size: calc(15 * var(--u)); font-style: normal; white-space: pre; }
+/* line-height 1 puts the baseline .86em down, so this lands it on the canvas's y = 112 */
+.boot p { position: absolute; left: calc(34 * var(--u)); top: calc(84.5 * var(--u)); margin: 0; font-size: calc(32 * var(--u)); color: var(--s-fg); white-space: pre; }
+.boot b { display: inline-block; width: calc(36 * var(--u)); color: var(--s-key); font-weight: 500; }
+.boot i { display: inline-block; width: calc(13 * var(--u)); height: calc(28 * var(--u)); margin-left: .6em; vertical-align: -.19em; background: var(--s-key); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.boot.gone { opacity: 0; visibility: hidden; }
+:root:not([data-boot]) .boot { display: none; }
+.boot-note { position: fixed; z-index: 20; right: max(var(--pad), env(safe-area-inset-right, 0px)); bottom: 24px; font-size: 14px; color: var(--muted); pointer-events: none; }
+.boot-note:empty { display: none; }
+
+:root[data-boot="on"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel) { opacity: 0; }
+:root[data-boot="on"] :is(.hero h1, .hero .role, .hero .lede, .hero .actions) { opacity: 0; transform: translateY(18px); }
+:root[data-boot="on"] .top { transform: translateY(-8px); }
+:root[data-boot="on"] .hint i { animation: none; } /* its sweep starts once the hint is in */
+/* (--slow is 1 unless ?debug's __slow() is checking the motion in slow motion) */
+:root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
+  transition: opacity calc(700ms * var(--slow, 1)) var(--ease-out), transform calc(800ms * var(--slow, 1)) var(--ease-out); }
+:root[data-boot="done"] .shade { transition-duration: calc(900ms * var(--slow, 1)); }
+:root[data-boot="done"] .hero .role { transition-delay: calc(70ms * var(--slow, 1)); }
+:root[data-boot="done"] .hero .lede { transition-delay: calc(130ms * var(--slow, 1)); }
+:root[data-boot="done"] .hero .actions { transition-delay: calc(210ms * var(--slow, 1)); }
+:root[data-boot="done"] :is(.top, .dock) { transition-delay: calc(300ms * var(--slow, 1)); }
+:root[data-boot="done"] .hint { transition-delay: calc(460ms * var(--slow, 1)); }
+
+/* Tooltip */
 .tip { position: fixed; left: 0; top: 0; z-index: 15; pointer-events: none; font-size: 14px; font-weight: 600; padding: 7px 11px; border-radius: 10px; background: var(--fg); color: var(--night);
   transform-origin: top left; opacity: 0; scale: .97; transition: opacity 150ms var(--ease-out), scale 150ms var(--ease-out); white-space: nowrap; }
 .tip.on { opacity: 1; scale: 1; }
@@ -200,7 +248,7 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .dock { display: flex; position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
     gap: 2px; padding: 5px; border-radius: 999px; background: rgba(11,15,28,.74); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
   .dock a { padding: 10px 16px; }
-  .loader small { bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
+  .boot-note { bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
 }
 /* Reduced motion: keep colour and opacity feedback, drop movement */
 @media (prefers-reduced-motion: reduce) {
@@ -208,5 +256,8 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .hint i { animation: none; }
   .btn:active, .link-row:active, .dock a:active, .top nav a:active { transform: none; }
   .tip { scale: 1; }
-  .loader b { transition: none; }
+  .boot i { animation: none; }
+  :root[data-boot="on"] :is(.top, .hero h1, .hero .role, .hero .lede, .hero .actions) { transform: none; }
+  :root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
+    transition: opacity 400ms ease; transition-delay: 0ms; }
 }

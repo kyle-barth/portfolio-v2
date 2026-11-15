@@ -44,6 +44,21 @@ pnpm build && pnpm start
 
 ## Notes
 
+- The page opens on the boot sequence. Before any JavaScript runs, `app/layout.tsx` marks the document
+  as booting, and the CSS holds the page back and shows the monitor's first frame as HTML. It sits at the
+  exact size and place the 3D monitor will take, in the colours the scene renders it at. Once three.js
+  is here, the 3D monitor takes over and runs a live boot log of what is loading: the script size, the
+  desk going up a prop at a time, the MacBook download, and shader compiles. When everything has loaded,
+  the lamp comes on and the camera pulls back from the monitor to the shot for the section in view. Only
+  then does the page come in: the heading, its lines, then the nav, on small staggered delays. With
+  reduced motion on, the pull-back is a quick fade and cut, and the page only fades in. If the scene
+  stalls, the page is shown anyway after 15 seconds on screen.
+- Every shader is compiled before the camera moves, a few at a time while the log runs, and the desk
+  stays out of sight (an empty layer mask, lights included) until they are ready. Otherwise the first
+  frame that draws something compiles its shader on the spot, and the boot log freezes or the pull-back
+  stutters. With bloom, the scene renders into the renderer's half-float buffer, so shaders are compiled
+  against a render target like it (`precompile` in `after-hours.ts`). The lamp's shadow pass is covered
+  the same way.
 - The camera glides to the next shot on a timed ease whenever the section in view changes, so scroll speed
   never makes it jump. With reduced motion on, the glide is shorter and gentler, and the lamp flicker and
   pointer parallax are off.
@@ -53,6 +68,10 @@ pnpm build && pnpm start
 - Bloom runs on larger screens only; phones also rebuild the lava wax every other frame.
 - Add `?debug` to the URL to get `__step(n)` (advance n frames) and `__setShot(i, shot, phone?)` (try a
   camera shot) in the console. Handy when tuning framing, or when a background tab is not painting.
+  `__slow(f)` (or `&slow=0.2`) runs the scene clock and the page's entrance at f times speed, to check
+  motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` plays
+  the full flight even when the OS asks for reduced motion. `__state()` reports the boot phase, the log
+  and the camera.
 - Add `?lab=keyboard` (or `macbook`, `macbook-built`, `printer`, `printer-bare`, `chair`, `lava`,
   `tableware`) to see one prop on its own in studio light, for checking it against product photos
   (`lib/scene/lab.ts`, loaded only on that URL). `__labView(i)` jumps to a fixed view;

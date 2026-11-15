@@ -21,9 +21,16 @@ export const viewport: Viewport = {
   colorScheme: 'dark',
 };
 
+// Runs before the first paint: the page opens on the desk's monitor booting, and is brought in once
+// the camera has pulled back from it (components/desk-scene.tsx). Without JavaScript nothing is hidden.
+const BOOT = "document.documentElement.dataset.boot='on'";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${display.variable} ${mono.variable}`}>
+    <html lang="en" className={`${display.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT }} />
+      </head>
       <body data-side="left">{children}</body>
     </html>
   );
