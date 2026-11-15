@@ -13,9 +13,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { Job, Person, Project } from '@/data/content';
 import { measureAnchors, stageAt } from '@/lib/scroll-stage';
 import { disposeTree } from './geometry';
-import { LAYOUT, MONITOR_SCREEN, buildBootMonitor, buildDeskScene, mountLaptop } from './props';
+import { LAYOUT, MONITOR_SCREEN, buildBootMonitor, buildDeskScene } from './props';
 import { MONITOR } from './props/monitor';
-import { buildMacBook, loadMacBook } from './props/macbook';
+import { MACBOOK_SCREEN } from './props/macbook';
 import { nightEnvironment } from './props/night-env';
 import { MUG_RIM } from './props/tableware';
 import { DESK } from './props/desk';
@@ -167,7 +167,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   const ON_TOP = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   const screenMat = new THREE.MeshBasicMaterial({ map: scrTex, toneMapped: false, ...ON_TOP });
 
-  const LW = 512, LH = 330; // the MacBook's 1.54:1 panel
+  const LW = 512, LH = Math.round((LW * MACBOOK_SCREEN.h) / MACBOOK_SCREEN.w); // the MacBook's panel, 1.52:1
   const lap = newCanvas(LW, LH);
   const lx = lap.getContext('2d')!;
   const lapTex = new THREE.CanvasTexture(lap);
@@ -181,7 +181,9 @@ export function createAfterHours(o: AfterHoursOptions) {
     [['f', '  role'], ['p', ': '], ['s', `"${person.shortRole}"`], ['p', ',']],
     [['f', '  based'], ['p', ': '], ['s', `"${person.location}"`], ['p', ',']],
     [['f', '  since'], ['p', ': '], ['n', String(person.since)], ['p', ',']],
-    [['f', '  cares'], ['p', ': ['], ['s', '"tests"'], ['p', ', '], ['s', '"experiments"'], ['p', ', '], ['s', '"alerts"'], ['p', '],']],
+    // wrapped: on one line it runs past the screen's right edge
+    [['f', '  skills'], ['p', ': ['], ['s', '"agentic workflows"'], ['p', ', '], ['s', '"tests"'], ['p', ',']],
+    [['p', '           '], ['s', '"experiments"'], ['p', ', '], ['s', '"alerts"'], ['p', '],']],
     [['f', '  building'], ['p', ': '], ['s', '"garage.chat"'], ['p', ',']],
     [['p', '};']],
   ];
@@ -219,9 +221,6 @@ export function createAfterHours(o: AfterHoursOptions) {
     bootLine(`three.js r${THREE.REVISION}`).done(kb > 1 ? `${Math.round(kb)} KB` : 'cached');
   }
   const deskLine = bootLine('building the desk');
-  const macLine = bootLine('macbook-pro-14.glb');
-  // the MacBook is a model file: start fetching it now, while the rest of the desk is built
-  const laptopFile = loadMacBook(lapMat, (loaded, total) => macLine.set(total ? `${mb(loaded)} / ${mb(total)} MB` : `${mb(loaded)} MB`));
 
   // Each project's screen is rendered once into its own canvas, then wiped onto the monitor.
   const shots: ([HTMLImageElement, HTMLImageElement | null] | null)[] = projects.map(() => null);
@@ -411,7 +410,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   let deskParts = 0;
   const deskBuilt = nextFrame()
     .then(() => buildDeskScene({
-      reduce, lowPower, monitorScreen: screenMat, env: env.texture, yieldFrame: nextFrame,
+      reduce, lowPower, monitorScreen: screenMat, laptopScreen: lapMat, env: env.texture, yieldFrame: nextFrame,
       onStep: (d, n, label) => { deskParts = n; deskLine.set(`${label}  ${d}/${n}`); },
     }))
     .then((d) => {
@@ -620,15 +619,7 @@ export function createAfterHours(o: AfterHoursOptions) {
     canvas.removeEventListener('lostpointercapture', onRelease);
   });
 
-  /* ---------- Place the MacBook, compile shaders; the boot log then hands over to the pull-back ---------- */
-  // Wait for the MacBook file so it is in the pull-back and the lamp's shadow; if it fails or is slow,
-  // the built stand-in takes its place (and a late file is ignored).
-  let laptopTimer = 0;
-  cleanups.push(() => clearTimeout(laptopTimer));
-  const laptop = Promise.race([
-    laptopFile.then((m) => { macLine.done(); return m.root; }),
-    new Promise<never>((_, fail) => { laptopTimer = window.setTimeout(() => fail(new Error('slow')), 6000); }),
-  ]).catch(() => { macLine.done('built-in stand-in'); return buildMacBook(lapMat).root; });
+  /* ---------- Compile shaders; the boot log then hands over to the pull-back ---------- */
 
   /**
    * Compile every shader the desk needs before the camera moves, or the pull-back stalls each time
@@ -705,12 +696,9 @@ export function createAfterHours(o: AfterHoursOptions) {
 
   let lampAt = -1;
   let lampLine: ReturnType<typeof bootLine> | null = null;
-  Promise.all([deskBuilt, laptop])
-    .then(([d, model]) => {
-      clearTimeout(laptopTimer);
+  deskBuilt
+    .then((d) => {
       if (disposed) return;
-      mountLaptop(d.laptopSlot, model, env.texture);
-      veil(d.laptopSlot);
       const shaders = bootLine('compiling shaders');
       return precompile(d.lava.light, (n) => shaders.set(`${n} programs`)).then(() => shaders.done(`${renderer.info.programs?.length ?? 0} programs`));
     })

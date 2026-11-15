@@ -178,15 +178,5 @@ export const projects: Project[] = [
 /** Third-party models in the 3D desk, credited in the footer (CC BY asks for title, author, source, licence and changes). */
 export type ModelCredit = { what: string; title: string; author: string; source: string; license: string; licenseUrl: string; changes: string; file: string };
 
-export const modelCredits: ModelCredit[] = [
-  {
-    what: 'MacBook',
-    title: 'Macbook-pro-14 inch',
-    author: 'DPM',
-    source: 'https://sketchfab.com/3d-models/macbook-pro-14-inch-cc4c925785e548a8ab54ff6aac781bc7',
-    license: 'CC BY 4.0',
-    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
-    changes: 'modified: Space Black finish, keyboard, trackpad, ports and feet adjusted, screen content replaced',
-    file: '/models/macbook-pro-14.glb',
-  },
-];
+// none at the moment: every prop, the MacBook included, is built in code
+export const modelCredits: ModelCredit[] = [];

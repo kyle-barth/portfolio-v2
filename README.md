@@ -18,14 +18,15 @@ pnpm build && pnpm start
 - `app/page.tsx`: the page markup, rendered on the server so the text is there before any WebGL.
 - `components/desk-scene.tsx`: mounts the 3D scene after hydration; three.js ships in its own chunk.
 - `lib/scene/after-hours.ts`: the scene itself: lights, camera shots and glides, the monitor and laptop screens, hotspots.
-- `lib/scene/props/`: every prop, built in code from primitives, apart from the MacBook (one 1.4 MB model file).
+- `lib/scene/props/`: every prop, built in code from primitives; no model files.
   `index.ts` lays out the desk and merges the static parts by material, so the whole desk draws in a few calls.
   - `desk.ts` (white standing desk, and a mat printed with liquid marble), `monitor.ts` (27" OLED on a V-shaped stand), `keyboard.ts`
     (Rama U80-A in Milk: solid top case with a cutout per key cluster, sculpted keycaps), `mouse.ts`
-    (Sora V2, one sculpted shell), `macbook.ts` (loads `public/models/macbook-pro-14.glb` and corrects
-    it against photos of the real one: Space Black, full-height function row, keyboard and trackpad
-    moved forward, ports redrawn where they really are, thumb scoop, feet, the site's terminal on the
-    screen; the scene waits up to 6 s for it, then uses a simple built-in laptop instead),
+    (Sora V2, one sculpted shell), `macbook.ts` (MacBook Pro 14-inch with the PROLED XDR display, in
+    Space Black, from its measured spec: the base and lid are lofted from the edge profile measured off
+    Apple's renders, with the finger scoop cut into the front edge; the 78 keys where they measure, with
+    their legends and function-row icons, the trackpad, grilles, ports with MagSafe's pins, intake slots,
+    feet, Dynamic Island, and the site's terminal on the panel),
     `pc.ts` (Cooler Master NR200P), `chair.ts` (Secretlab
     TITAN Evo: padded parts built as cushions, with the Evo's arched head, wings and tone-on-tone panel),
     `snorlax.ts` (blocky Snorlax), `pothos.ts`, `tableware.ts` (coffee in a hand-thrown mug on a walnut
@@ -38,8 +39,8 @@ pnpm build && pnpm start
     glass, so it never passes through it; the bottle, wax and glass are self-lit (matcaps and
     vertex-coloured glow), and its light is the scene's key light.
 - `lib/scene/p2s.ts`: the P2S and AMS 2 Pro, printing a tiny garage.
-- `lib/scene/specs/`: measured specs (millimetres, with sources) that the printer and the lava lamp are
-  built from, plus the dimension checks and reference-image calibrations the lab uses.
+- `lib/scene/specs/`: measured specs (millimetres, with sources) that the printer, the lava lamp and the
+  MacBook are built from, plus the dimension checks and reference-image calibrations the lab uses.
 - `lib/scene/geometry.ts`: merge-by-material and teardown helpers.
 
 ## Notes
@@ -48,7 +49,7 @@ pnpm build && pnpm start
   as booting, and the CSS holds the page back and shows the monitor's first frame as HTML. It sits at the
   exact size and place the 3D monitor will take, in the colours the scene renders it at. Once three.js
   is here, the 3D monitor takes over and runs a live boot log of what is loading: the script size, the
-  desk going up a prop at a time, the MacBook download, and shader compiles. When everything has loaded,
+  desk going up a prop at a time, and shader compiles. When everything has loaded,
   the lamp comes on and the camera pulls back from the monitor to the shot for the section in view. Only
   then does the page come in: the heading, its lines, then the nav, on small staggered delays. With
   reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine ease (well under
@@ -73,7 +74,7 @@ pnpm build && pnpm start
   motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` runs
   the scene as if reduced motion were off, even when the OS asks for it. `__state()` reports the boot phase, the log
   and the camera.
-- Add `?lab=keyboard` (or `macbook`, `macbook-built`, `printer`, `printer-bare`, `chair`, `lava`,
+- Add `?lab=keyboard` (or `macbook`, `macbook-closed`, `printer`, `printer-bare`, `chair`, `lava`,
   `tableware`) to see one prop on its own in studio light, for checking it against product photos
   (`lib/scene/lab.ts`, loaded only on that URL). `__labView(i)` jumps to a fixed view;
   `__labCapture('v1')` renders six views and a hero shot and posts them as PNGs to a local receiver on
@@ -81,13 +82,5 @@ pnpm build && pnpm start
   measured off the built parts, and `__labOverlay('side', 'v1')` lines the model up with a straight-on
   reference image (fetched from the same receiver, so the images stay out of the repo) and reports the
   outline overlap (IoU), with a sheet of the photo with the model's edges, the outline difference and a
-  blend.
+  blend. References can be front, side (left or right) or top-down views.
 
-## Credits
-
-- MacBook Pro 14-inch model: ["Macbook-pro-14 inch"](https://sketchfab.com/3d-models/macbook-pro-14-inch-cc4c925785e548a8ab54ff6aac781bc7)
-  by DPM, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changed here (in code, at
-  load time; the file itself is as downloaded): recoloured to Space Black, function row made full height,
-  keyboard and trackpad moved forward, ports redrawn, thumb scoop and feet added, notch widened, bezel
-  lettering removed, screen content replaced. The credit also shows in the site's footer (from
-  `modelCredits` in `data/content.ts`).

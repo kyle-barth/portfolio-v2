@@ -1,5 +1,5 @@
 // Model lab: one prop on its own in neutral studio light, for checking it against product photos.
-// Open the site with ?lab=keyboard (or macbook, macbook-built, printer, printer-bare, chair) and drag to
+// Open the site with ?lab=keyboard (or macbook, macbook-closed, printer, printer-bare, chair) and drag to
 // orbit. In the console, __labView(i) jumps to one of the fixed views, and __labCapture('v1') renders all
 // six into a contact sheet plus a hero shot and posts them to a local receiver on ?save=<port> (default 8799).
 // Models built from a measured spec also get __labCheck() (each spec'd dimension, measured off the built
@@ -14,11 +14,12 @@ import { disposeTree } from './geometry';
 import { buildP2S } from './p2s';
 import { buildChair } from './props/chair';
 import { buildKeyboard } from './props/keyboard';
-import { buildMacBook, loadMacBook } from './props/macbook';
+import { buildMacBook } from './props/macbook';
 import { buildLavaLamp } from './props/lava-lamp';
 import { applyReflections } from './props/night-env';
 import { buildDonut, buildMug } from './props/tableware';
 import { LAVA_CHECKS, LAVA_REFS } from './specs/lava';
+import { MBP_CHECKS, MBP_REFS } from './specs/macbook';
 import { P2S_CHECKS, P2S_REFS, type RefImage } from './specs/p2s';
 
 type Model = {
@@ -40,6 +41,11 @@ function printer(ams: boolean): Model {
   return { name: `Bambu Lab P2S${ams ? ' with AMS 2 Pro' : ''}`, root: p.root, front: new THREE.Vector3(0, 0, 1), measured: p.measured, checks: P2S_CHECKS, refs, unitMm: 160 };
 }
 
+function macbook(open: number, refs: Record<string, RefImage>): Model {
+  const m = buildMacBook(desktopMaterial(), { open });
+  return { name: `MacBook Pro 14-inch, PROLED XDR (Space Black)${open ? '' : ', closed'}`, root: m.root, front: new THREE.Vector3(0, 0, 1), measured: m.measured, checks: MBP_CHECKS, refs, unitMm: 160 };
+}
+
 /** A plain macOS-style desktop for the laptop screen. */
 function desktopMaterial() {
   const c = document.createElement('canvas');
@@ -57,8 +63,9 @@ function desktopMaterial() {
 
 const MODELS: Record<string, () => Model | Promise<Model>> = {
   keyboard: () => ({ name: 'Rama Works U80-A (Milk)', root: buildKeyboard(), front: new THREE.Vector3(0, 0, 1) }),
-  macbook: async () => ({ name: 'MacBook Pro 14-inch (Space Black)', root: (await loadMacBook(desktopMaterial())).root, front: new THREE.Vector3(0, 0, 1) }),
-  'macbook-built': () => ({ name: 'MacBook Pro 14-inch (built-in fallback)', root: buildMacBook(desktopMaterial()).root, front: new THREE.Vector3(0, 0, 1) }),
+  // open, as on the desk (overlays the deck seen from above); closed, for the four outside views
+  macbook: () => macbook(108, { deck: MBP_REFS.deck }),
+  'macbook-closed': () => macbook(0, { top: MBP_REFS.top, front: MBP_REFS.front, left: MBP_REFS.left, right: MBP_REFS.right }),
   printer: () => printer(true),
   'printer-bare': () => printer(false),
   chair: () => ({ name: 'Secretlab TITAN Evo', root: buildChair(), front: new THREE.Vector3(0, 0, -1) }),
@@ -251,7 +258,10 @@ export async function createLab(name: string) {
     const NW = Math.round(iw * fit), NH = Math.round(ih * fit);
     const u = ref.mmPerPx / (model.unitMm ?? 1); // scene units per image pixel
     const cam = new THREE.OrthographicCamera((rx0 - ref.cx) * u, (rx1 - ref.cx) * u, (ref.floorY - ry0) * u, (ref.floorY - ry1) * u, 0.01, 1000);
-    if (ref.view === 'front') cam.position.set(0, 0, 100); else cam.position.set(-100, 0, 0);
+    if (ref.view === 'front') cam.position.set(0, 0, 100);
+    else if (ref.view === 'left') cam.position.set(-100, 0, 0);
+    else if (ref.view === 'right') cam.position.set(100, 0, 0);
+    else { cam.position.set(0, 100, 0); cam.up.set(0, 0, ref.up === 'front' ? 1 : -1); } // from above
     cam.lookAt(0, 0, 0);
     cam.updateMatrixWorld();
 
@@ -272,6 +282,22 @@ export async function createLab(name: string) {
     for (let i = 0; i < NW * NH; i++) {
       const y = Math.floor(i / NW), k = i * 4;
       photoMask[i] = (ref.roi || y < NH * 0.89) && Math.max(Math.abs(pd[k] - bgc[0]), Math.abs(pd[k + 1] - bgc[1]), Math.abs(pd[k + 2] - bgc[2])) > 18 ? 1 : 0;
+    }
+    // A dark product on a dark backdrop (a black keyboard, port openings) has holes in that mask:
+    // whatever the backdrop can't reach from the image's edge is product.
+    {
+      const seen = new Uint8Array(NW * NH), stack: number[] = [];
+      const push = (i: number) => { if (!seen[i] && !photoMask[i]) { seen[i] = 1; stack.push(i); } };
+      for (let x = 0; x < NW; x++) { push(x); push((NH - 1) * NW + x); }
+      for (let y = 0; y < NH; y++) { push(y * NW); push(y * NW + NW - 1); }
+      while (stack.length) {
+        const i = stack.pop()!, x = i % NW;
+        if (x > 0) push(i - 1);
+        if (x < NW - 1) push(i + 1);
+        if (i >= NW) push(i - NW);
+        if (i < NW * (NH - 1)) push(i + NW);
+      }
+      for (let i = 0; i < NW * NH; i++) if (!seen[i]) photoMask[i] = 1;
     }
 
     // the model: lit, then as a flat white mask, then its visible edges

@@ -73,7 +73,8 @@ export const P2S = {
  * the repo; the lab fetches them from the local receiver (?save=<port>, served from its reference folder).
  */
 export type RefImage = {
-  file: string; view: 'front' | 'left'; mmPerPx: number; cx: number; floorY: number;
+  file: string; view: 'front' | 'left' | 'right' | 'top'; mmPerPx: number; cx: number; floorY: number;
+  up?: 'back' | 'front'; // seen from above: the edge at the top of the image (floorY is then the row of z = 0)
   ams?: boolean; // printer refs: shows the AMS on top
   roi?: [number, number, number, number]; // x0, y0, x1, y1: compare only this part of the image
 };
