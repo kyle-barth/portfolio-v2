@@ -151,11 +151,11 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
    chrome, on --ease-out with small uneven delays. layout.tsx sets data-boot before the first paint
    and desk-scene.tsx moves it on, so without JavaScript nothing is ever hidden. */
 /* The stand-in is the monitor's own first frame: its screen (590.42 × 333.72 mm, the panel's active
-   area) at the size and place the square-on boot camera shows it (bootPose: --fill of the viewport,
-   centred), drawn in the 1024×576 canvas's units (--u across, --uy down: the canvas is stretched a
+   area) at the size and place the square-on boot camera shows it (bootPose: --fill of the viewport's
+   width, or --fill-h of its height on windows too wide for that, centred), drawn in the 1024×576 canvas's units (--u across, --uy down: the canvas is stretched a
    hair taller to fit the panel), so when the 3D monitor takes over nothing moves. It fades in; the 3D
    monitor waits for that before it takes over (after-hours.ts). */
-.boot { --fill: .72; position: fixed; inset: 0 0 auto; height: 100vh; height: 100lvh; z-index: 20; display: grid; place-items: center; pointer-events: none;
+.boot { --fill: .72; --fill-h: .85; position: fixed; inset: 0 0 auto; height: 100vh; height: 100lvh; z-index: 20; display: grid; place-items: center; pointer-events: none;
   container-type: size; transition: opacity 240ms var(--ease-out), visibility 0s linear 240ms;
   /* the monitor's palette as the desk renders it square on, measured off the canvas (text: the cores of
      its strokes): the bloom pipeline tone-maps the screen too (ACES at the boot exposure, 0.75); phones
@@ -164,11 +164,11 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   background: var(--s-night); --s-night: #000000; --s-bg: #000107; --s-bar: #020517; --s-fg: #c6c9d1; --s-mute: #424d70; --s-key: #dbb16d;
   --s-red: #e36964; --s-yellow: #dac167; --s-green: #76ca8e; }
 @media (max-width: 760px), (max-aspect-ratio: 9/10) {
-  .boot { --fill: .94; --s-night: #010103; --s-bg: #0a0e1d; --s-bar: #11182f; --s-fg: #b2b7c8; --s-mute: #4d5877; --s-key: #cd9558;
+  .boot { --fill: .94; --fill-h: .94; --s-night: #010103; --s-bg: #0a0e1d; --s-bar: #11182f; --s-fg: #b2b7c8; --s-mute: #4d5877; --s-key: #cd9558;
     --s-red: #df5e60; --s-yellow: #e0b653; --s-green: #51c57c; }
 }
 .boot-screen { --u: calc(100cqw / 1024); --uy: calc(var(--u) * 1.00487); position: relative; container-type: inline-size; aspect-ratio: 590.42 / 333.72;
-  width: min(calc(var(--fill) * 100cqw), calc(var(--fill) * 100cqh * 590.42 / 333.72));
+  width: min(calc(var(--fill) * 100cqw), calc(var(--fill-h) * 100cqh * 590.42 / 333.72));
   background: var(--s-bg); font-family: var(--font-mono), ui-monospace, monospace; font-weight: 500; line-height: 1;
   animation: boot-in calc(700ms * var(--slow, 1)) var(--ease-out) both; }
 @keyframes boot-in { from { opacity: 0; } }
@@ -188,21 +188,29 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
 .boot-note { position: fixed; z-index: 20; right: max(var(--pad), env(safe-area-inset-right, 0px)); bottom: 24px; font-size: 14px; color: var(--muted); pointer-events: none; }
 .boot-note:empty { display: none; }
 
-:root[data-boot="on"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel) { opacity: 0; }
-:root[data-boot="on"] :is(.hero h1, .hero .role, .hero .lede, .hero .actions) { opacity: 0; transform: translateY(18px); }
-:root[data-boot="on"] .top { transform: translateY(-8px); }
-:root[data-boot="on"] .hint i { animation: none; } /* its sweep starts once the hint is in */
-/* A fade, not a pop: the opacity starts gently and settles (a strong ease-out puts a 136 px heading at
-   80% within 200 ms), and the rise eases out a little longer under it.
+/* The entrance: each side of the page comes in from its own edge, no fading. Everything waits just
+   past the edge of the page it sits on (its own width plus the page margin, so each travels exactly as
+   far as it needs to) and slides in on an ease-out: on the left the brand, the name and its lines, the
+   hint and left-hand panels; on the right the nav and right-hand panels; the phone's dock from the bottom.
+   The name goes first, well ahead of its lines (their text runs further right, so starting together they
+   would show first), then the chrome. Only the shading behind the text and the top
+   bar's scrim fade, being backgrounds rather than things that arrive.
    (--slow is 1 unless ?debug's __slow() is checking the motion in slow motion) */
-:root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
-  transition: opacity calc(900ms * var(--slow, 1)) cubic-bezier(.33, 0, .2, 1), transform calc(1100ms * var(--slow, 1)) cubic-bezier(.33, 1, .68, 1); }
-:root[data-boot="done"] .shade { transition-duration: calc(1000ms * var(--slow, 1)); }
-:root[data-boot="done"] .hero .role { transition-delay: calc(70ms * var(--slow, 1)); }
-:root[data-boot="done"] .hero .lede { transition-delay: calc(130ms * var(--slow, 1)); }
-:root[data-boot="done"] .hero .actions { transition-delay: calc(210ms * var(--slow, 1)); }
-:root[data-boot="done"] :is(.top, .dock) { transition-delay: calc(300ms * var(--slow, 1)); }
-:root[data-boot="done"] .hint { transition-delay: calc(460ms * var(--slow, 1)); }
+:root { --off-left: calc(-100% - max(var(--pad), env(safe-area-inset-left, 0px)) - 24px);
+  --off-right: calc(100% + max(var(--pad), env(safe-area-inset-right, 0px)) + 24px); }
+:root[data-boot="on"] :is(.brand, .hint, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) { transform: translateX(var(--off-left)); }
+:root[data-boot="on"] :is(.top nav, .shot.right .panel) { transform: translateX(var(--off-right)); }
+:root[data-boot="on"] .shade, :root[data-boot="on"] .top::before { opacity: 0; } /* (no pseudo-elements inside :is) */
+:root[data-boot="on"] .hint i { animation: none; } /* its sweep starts once the hint is in */
+/* :where adds no specificity, so the delays below win over this rule's own (zero) delay */
+:root[data-boot="done"] :where(.brand, .top nav, .dock, .hint, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
+  transition: transform calc(1100ms * var(--slow, 1)) cubic-bezier(.22, 1, .36, 1); }
+:root[data-boot="done"] .shade, :root[data-boot="done"] .top::before { transition: opacity calc(1000ms * var(--slow, 1)) cubic-bezier(.33, 0, .2, 1); }
+:root[data-boot="done"] .hero .role { transition-delay: calc(120ms * var(--slow, 1)); }
+:root[data-boot="done"] .hero .lede { transition-delay: calc(200ms * var(--slow, 1)); }
+:root[data-boot="done"] .hero .actions { transition-delay: calc(280ms * var(--slow, 1)); }
+:root[data-boot="done"] :is(.brand, .top nav, .dock) { transition-delay: calc(360ms * var(--slow, 1)); }
+:root[data-boot="done"] .hint { transition-delay: calc(520ms * var(--slow, 1)); }
 
 /* Tooltip */
 .tip { position: fixed; left: 0; top: 0; z-index: 15; pointer-events: none; font-size: 14px; font-weight: 600; padding: 7px 11px; border-radius: 10px; background: var(--fg); color: var(--night);
@@ -218,6 +226,7 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .top nav, .brand .name { display: none; }
   .shot, .shot.tall { min-height: 100svh; align-items: flex-end; justify-content: flex-start; padding-top: 46svh; padding-bottom: 110px; padding-left: var(--gl); padding-right: var(--gr); }
   .shot.right { justify-content: flex-start; }
+  :root[data-boot="on"] .shot.right .panel { transform: translateX(var(--off-left)); }
   .panel { width: 100%; }
   .glass { padding: 20px; border-radius: 20px; }
   .hero { padding-top: 42svh; }
@@ -256,17 +265,19 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .dock { display: flex; position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
     gap: 2px; padding: 5px; border-radius: 999px; background: rgba(11,15,28,.74); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
   .dock a { padding: 10px 16px; }
+  :root[data-boot="on"] .dock { transform: translateX(-50%) translateY(calc(100% + 16px + env(safe-area-inset-bottom, 0px))); }
   .boot-note { bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
 }
 /* Reduced motion: keep colour and opacity feedback, drop movement */
+/* Reduced motion: the small flourishes stop (the hint's sweep, button presses, the cursor's blink). The
+   page's entrance still slides in from the sides for everyone, by choice: it is the one piece of motion
+   the page is built around. (?debug&motion=full shows the full motion anyway: layout.tsx marks the
+   document.) */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .hint i { animation: none; }
-  .btn:active, .link-row:active, .dock a:active, .top nav a:active { transform: none; }
-  .tip { scale: 1; }
-  .boot i { animation: none; }
-  .boot-screen { animation-duration: calc(300ms * var(--slow, 1)); }
-  :root[data-boot="on"] :is(.top, .hero h1, .hero .role, .hero .lede, .hero .actions) { transform: none; }
-  :root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
-    transition: opacity 400ms ease; transition-delay: 0ms; }
+  :root:not([data-motion="full"]) { scroll-behavior: auto; }
+  :root:not([data-motion="full"]) .hint i { animation: none; }
+  :root:not([data-motion="full"]) :is(.btn:active, .link-row:active, .dock a:active, .top nav a:active) { transform: none; }
+  :root:not([data-motion="full"]) .tip { scale: 1; }
+  :root:not([data-motion="full"]) .boot i { animation: none; }
+  :root:not([data-motion="full"]) .boot-screen { animation-duration: calc(300ms * var(--slow, 1)); }
 }

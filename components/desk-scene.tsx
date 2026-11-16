@@ -78,7 +78,8 @@ export default function DeskScene({ person, jobs, projects }: Props) {
             boot: { root: bootEl, note },
             bootStart,
             onReveal: () => { standDown(); reveal(); },
-            reduceMotion: debug && params.get('motion') === 'full' ? false : undefined,
+            reduceMotion: document.documentElement.dataset.motion === 'full' ? false : undefined, // see layout.tsx
+            debug,
             tip,
             monoFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim(),
             person,
@@ -96,7 +97,7 @@ export default function DeskScene({ person, jobs, projects }: Props) {
           // __slow(f) / ?slow=f: the scene clock and the page's CSS transitions at f times speed, to check
           // motion. Whoever drives it from the console is in charge of the reveal too, so the net stands down.
           const slowDown = (f: number) => { scene?.slow(f); document.documentElement.style.setProperty('--slow', String(1 / f)); };
-          Object.assign(window, { __step: scene.step, __setShot: scene.setShot, __state: scene.state, __slow: (f = 0.25) => { slowDown(f); standDown(); } });
+          Object.assign(window, { __step: scene.step, __setShot: scene.setShot, __state: scene.state, __bootView: scene.bootView, __slow: (f = 0.25) => { slowDown(f); standDown(); } });
           if (slowAt !== 1) slowDown(slowAt);
         }
       })

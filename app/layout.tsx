@@ -23,7 +23,10 @@ export const viewport: Viewport = {
 
 // Runs before the first paint: the page opens on the desk's monitor booting, and is brought in once
 // the camera has pulled back from it (components/desk-scene.tsx). Without JavaScript nothing is hidden.
-const BOOT = "document.documentElement.dataset.boot='on'";
+// With ?debug&motion=full (any motion=full in development) it also marks the document so the CSS shows
+// the full motion even when the system asks for reduced motion, as the scene does.
+const DEV = process.env.NODE_ENV !== 'production';
+const BOOT = `document.documentElement.dataset.boot='on';var q=location.search;if((${DEV}||/[?&]debug(=|&|$)/.test(q))&&/[?&]motion=full(&|$)/.test(q))document.documentElement.dataset.motion='full'`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

@@ -14,7 +14,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { Job, Person, Project } from '@/data/content';
 import { measureAnchors, stageAt } from '@/lib/scroll-stage';
 import { disposeTree } from './geometry';
-import { LAYOUT, MONITOR_SCREEN, buildBootSet, buildDeskScene } from './props';
+import { LAYOUT, MONITOR_SCREEN, UP_FRONT, buildAhead, buildBootSet, buildDeskScene, vertexCloud } from './props';
 import { MONITOR } from './props/monitor';
 import { MACBOOK_SCREEN } from './props/macbook';
 import { nightEnvironment } from './props/night-env';
@@ -36,6 +36,8 @@ export type AfterHoursOptions = {
   jobs: Job[];
   projects: Project[];
   initialProject?: number;
+  /** Debug: keep what the console hooks need to measure (each prop's own meshes, for bootView). */
+  debug?: boolean;
   /** Overrides the prefers-reduced-motion setting (debug: ?motion=full to check the flight on a machine that asks for less motion). */
   reduceMotion?: boolean;
 };
@@ -44,18 +46,21 @@ type Vec3 = readonly [number, number, number];
 type Shot = { t: THREE.Vector3; sph: THREE.Spherical; fov: number; sx: number; sy: number };
 type CamState = { target: THREE.Vector3; radius: number; phi: number; theta: number; fov: number; sx: number; sy: number };
 type Hotspot = { label: string; to: string | null };
+/** One prop as the boot camera sees it (bootView): whether it is in the boot set (there from the start), in view at all, how far it would have to move to clear the
+ *  left, right or bottom edge of the view (negative: the margin it has), and its extent. */
+type PropInView = { boot: boolean; seen: boolean; left: number; right: number; down: number; x: number[]; z: number[]; top: number };
 
 // One shot per section: target, camera offset from the target, vertical fov, and a view offset
 // (fraction of the screen) that pushes the subject away from the text panel.
 const RAW_SHOTS: Record<'wide' | 'phone', readonly { t: Vec3; o: Vec3; fov: number; sx: number; sy: number }[]> = {
   wide: [
-    { t: [0.3, 1.2, -0.4], o: [8.6, 5.8, 12.2], fov: 34, sx: 0.19, sy: 0.04 },
+    { t: [1.05, 1.2, -0.4], o: [9.63, 6.5, 13.66], fov: 34, sx: 0.19, sy: 0.04 }, // the whole desk, printer included
     { t: [0.25, 1.62, -1.5], o: [0.5, 0.45, 9.0], fov: 30, sx: 0.2, sy: 0 },
-    { t: [-3.3, 1.0, -0.9], o: [3.6, 2.4, 5.6], fov: 32, sx: -0.2, sy: 0 }, // from the front-right: PC window, lamp, plant
+    { t: [-3.75, 1.0, -0.95], o: [3.85, 2.55, 5.95], fov: 32, sx: -0.2, sy: 0 }, // from the front-right: the laptop, with the PC, plant and lamp behind
     { t: [0, 0, 0.5], o: [0.01, 23, 4.5], fov: 34, sx: 0, sy: 0.24 }, // the whole desk from above, clear of the heading
   ],
   phone: [
-    { t: [0.6, 1.5, -0.8], o: [7.0, 7.2, 17.0], fov: 46, sx: 0, sy: 0.2 }, // keeps the lava lamp in frame
+    { t: [1.1, 1.5, -0.8], o: [7.84, 8.06, 19.04], fov: 46, sx: 0, sy: 0.2 }, // from the lava lamp to the printer
     { t: [0.25, 1.68, -1.5], o: [0.35, 0.6, 10.8], fov: 44, sx: 0, sy: 0.27 },
     { t: [-3.3, 1.0, -0.9], o: [3.4, 3.4, 7.6], fov: 46, sx: 0, sy: 0.25 },
     { t: [0, 0, 0.6], o: [1.6, 20.5, 0.01], fov: 46, sx: 0, sy: 0.24 },
@@ -457,9 +462,34 @@ export function createAfterHours(o: AfterHoursOptions) {
   let desk: Awaited<ReturnType<typeof buildDeskScene>> | null = null;
   const nextFrame = () => new Promise<void>((ok) => requestAnimationFrame(() => ok()));
   let deskParts = 0;
+  // On a portrait screen the boot camera also sees what is in front of the monitor: the keyboard, mouse
+  // and chair go up next, a prop a frame with their shaders compiled off the main thread where it can,
+  // and the 3D monitor waits for them before it takes over (behind the stand-in, so out of sight).
+  // The rest of the desk builds after them, so the boot as a whole takes no longer.
+  const upFront = phoneQ.matches ? UP_FRONT : [];
+  let ahead: Awaited<ReturnType<typeof buildAhead>> | null = null, aheadIn = upFront.length === 0;
   const deskBuilt = nextFrame()
+    .then(async () => {
+      if (!upFront.length) return;
+      const offscreen = bloom ? new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }) : null; // as precompile()
+      const prepare = (part: THREE.Object3D) => {
+        const prev = renderer.getRenderTarget();
+        renderer.setRenderTarget(offscreen);
+        try { return renderer.compileAsync(part, camera, scene); } finally { renderer.setRenderTarget(prev); }
+      };
+      try {
+        const a = await buildAhead(upFront, { monitorScreen: screenMat, laptopScreen: lapMat, env: env.texture, yieldFrame: nextFrame, prepare, measure: o.debug });
+        if (disposed) return;
+        scene.add(a.root);
+        lava.light.shadow.needsUpdate = true; // they cast shadows too
+        ahead = a;
+      } finally {
+        offscreen?.dispose();
+        aheadIn = true; // (if they failed, the error goes on to the catch below; the monitor still takes over)
+      }
+    })
     .then(() => buildDeskScene({
-      reduce, monitorScreen: screenMat, laptopScreen: lapMat, env: env.texture, yieldFrame: nextFrame,
+      reduce, monitorScreen: screenMat, laptopScreen: lapMat, env: env.texture, yieldFrame: nextFrame, measure: o.debug, skip: upFront,
       onStep: (d, n, label) => { deskParts = n; deskLine.set(`${label}  ${d}/${n}`); },
     }))
     .then((d) => {
@@ -519,19 +549,28 @@ export function createAfterHours(o: AfterHoursOptions) {
   const newCam = (): CamState => ({ target: new THREE.Vector3(), radius: 0, phi: 0, theta: 0, fov: 34, sx: 0, sy: 0 });
   const want = newCam(), from = newCam(), cam = newCam();
   const copyCam = (a: CamState, b: CamState) => { a.target.copy(b.target); a.radius = b.radius; a.phi = b.phi; a.theta = b.theta; a.fov = b.fov; a.sx = b.sx; a.sy = b.sy; };
-  /** Booting: square on to the monitor, its screen filling most of the view (the full width on phones). */
+  /**
+   * Booting: square on to the monitor, its screen filling most of the view (the full width on phones).
+   * The screen fills `fill` of the width, or `fillH` of the height on windows too wide for that. The
+   * height limit sits above the width's, so the view keeps the same width at the monitor up to about
+   * 2.1:1 (a laptop's browser window at 125%) and the props just outside it stay outside. The stand-in
+   * in globals.css (--fill, --fill-h) sizes itself by the same rule.
+   */
   const BOOT_FOV = 34;
   function bootPose(aspect: number, phone: boolean, out: CamState) {
-    const fill = phone ? 0.94 : 0.72, span = 2 * Math.tan(THREE.MathUtils.degToRad(BOOT_FOV / 2));
+    const fill = phone ? 0.94 : 0.72, fillH = phone ? 0.94 : 0.85, span = 2 * Math.tan(THREE.MathUtils.degToRad(BOOT_FOV / 2));
     out.target.copy(MONITOR_SCREEN);
-    out.radius = Math.max(MONITOR.screenH / fill / span, MONITOR.screenW / fill / (span * aspect));
+    out.radius = Math.max(MONITOR.screenH / fillH / span, MONITOR.screenW / fill / (span * aspect));
     out.phi = Math.PI / 2; out.theta = 0; out.fov = BOOT_FOV; out.sx = 0; out.sy = 0;
   }
+  let clouds: Record<string, Float32Array> | null = null; // the props' vertices, for bootView (debug)
+  /** How much further back a shot sits on this window's shape than on the shape it was framed for. */
+  const shotFit = (aspect: number, phone: boolean) => phone
+    ? THREE.MathUtils.clamp(Math.pow(0.46 / aspect, 0.6), 0.7, 1.3)
+    : THREE.MathUtils.clamp(Math.pow(1.78 / aspect, 0.8), 0.85, 1.4); // the desk is wide: narrower windows need to see as much of it
   function shotFor(i: number, set: Shot[], aspect: number, out: CamState) {
     const s = set[Math.max(0, Math.min(set.length - 1, i))];
-    const fit = set === SHOTS.wide
-      ? THREE.MathUtils.clamp(Math.pow(1.78 / aspect, 0.55), 0.85, 1.4)
-      : THREE.MathUtils.clamp(Math.pow(0.46 / aspect, 0.6), 0.7, 1.3);
+    const fit = shotFit(aspect, set !== SHOTS.wide);
     out.target.copy(s.t);
     out.radius = s.sph.radius * fit;
     out.phi = s.sph.phi;
@@ -575,15 +614,17 @@ export function createAfterHours(o: AfterHoursOptions) {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+  const at = (p: Vec3, y: number, dx = 0, dz = 0): Vec3 => [p[0] + dx, y, p[2] + dz];
   const HOTSPOTS: { p: Vec3; s: Vec3; label: string; to: string | null }[] = [
-    { p: [0.25, 1.72, -1.55], s: [4.0, 2.4, 0.6], label: 'Side projects', to: '#work' },
-    { p: [-3.2, 1.2, -1.72], s: [0.8, 2.4, 0.8], label: 'Experience', to: '#experience' },
-    { p: [-2.3, 0.6, -1.88], s: [1.1, 1.4, 1.1], label: 'Experience', to: '#experience' },
-    { p: [-2.8, 0.55, 0.8], s: [2.2, 1.3, 1.8], label: 'Experience', to: '#experience' },
-    { p: [-4.2, 0.92, -1.25], s: [1.2, 1.9, 2.4], label: 'Small form factor PC in a Cooler Master NR200P', to: null },
-    { p: [-4.25, 0.45, 1.6], s: [0.8, 0.95, 0.8], label: 'A very sleepy, very blocky Snorlax', to: null },
-    { p: [3.95, 0.35, 1.15], s: [1.9, 0.9, 1.9], label: 'Grab a coffee and say hi', to: '#contact' }, // the mug and the donut
-    { p: [3.65, 2.25, -1.08], s: [2.6, 4.5, 2.7], label: 'Bambu Lab P2S with AMS 2 Pro, printing a tiny garage', to: null },
+    { p: at(LAYOUT.monitor, 1.72), s: [4.0, 2.4, 0.6], label: 'Side projects', to: '#work' },
+    { p: at(LAYOUT.lava, 1.2), s: [0.8, 2.4, 0.8], label: 'Experience', to: '#experience' },
+    { p: at(LAYOUT.pothos, 0.6, 0, 0.2), s: [1.1, 1.4, 1.3], label: 'Experience', to: '#experience' },
+    { p: at(LAYOUT.macbook, 0.55), s: [2.2, 1.3, 1.8], label: 'Experience', to: '#experience' },
+    { p: at(LAYOUT.pc, 0.92), s: [1.2, 1.9, 2.4], label: 'Small form factor PC in a Cooler Master NR200P', to: null },
+    { p: at(LAYOUT.snorlax, 0.45), s: [0.8, 0.95, 0.8], label: 'A very sleepy, very blocky Snorlax', to: null },
+    // the mug and the donut
+    { p: at(LAYOUT.mug, 0.35, (LAYOUT.donut[0] - LAYOUT.mug[0]) / 2, (LAYOUT.donut[2] - LAYOUT.mug[2]) / 2), s: [1.9, 0.9, 1.9], label: 'Grab a coffee and say hi', to: '#contact' },
+    { p: at(LAYOUT.printer, 2.25), s: [2.6, 4.5, 2.7], label: 'Bambu Lab P2S with AMS 2 Pro, printing a tiny garage', to: null },
   ];
   const proxies = HOTSPOTS.map((d) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]), proxyMat);
@@ -970,14 +1011,15 @@ export function createAfterHours(o: AfterHoursOptions) {
   const timer = new THREE.Timer();
   timer.connect(document);
   let frames = 0, timeScale = 1;
-  // The page's stand-in fades the screen in; the 3D monitor takes over once it has, and has drawn.
+  // The page's stand-in fades the screen in; the 3D monitor takes over once it has, and has drawn, with
+  // anything that goes up ahead of the desk in place.
   const fadeIn = boot.root.querySelector('.boot-screen')?.getAnimations?.()[0];
   let fadedIn = !fadeIn || fadeIn.playState === 'finished';
   fadeIn?.finished.then(() => { fadedIn = true; }, () => { fadedIn = true; });
   renderer.setAnimationLoop(() => {
     timer.update();
     step(Math.min(timer.getDelta(), 0.05) * timeScale);
-    if (handedAt < 0 && ++frames >= 2 && fadedIn) { boot.root.classList.add('gone'); handedAt = time; }
+    if (handedAt < 0 && ++frames >= 2 && fadedIn && aheadIn) { boot.root.classList.add('gone'); handedAt = time; }
     if (unveilDue) unveilUnderCopy();
   });
 
@@ -989,10 +1031,43 @@ export function createAfterHours(o: AfterHoursOptions) {
     slow: (f = 0.25) => { timeScale = f; },
     /** Where the boot has got to and where the camera is (debug, and the e2e checks). */
     state: () => ({
-      phase, mode, t: time, loaded, frames, lamp: lampAt < 0 ? -1 : time - lampAt,
+      phase, mode, t: time, loaded, frames, lamp: lampAt < 0 ? -1 : time - lampAt, draws: renderer.info.render.calls, ahead: aheadIn,
       cam: { pos: camera.position.toArray(), fov: camera.fov, target: cam.target.toArray() },
       lines: bootLines.map((l) => `${l.done ? 'ok' : '..'} ${l.label} ${l.detail}`.trim()),
     }),
+    /**
+     * Which props the boot camera sees at this window's shape (debug only). The props that load last
+     * should all be out of it, so they come into sight with the pull-back rather than appearing in it.
+     * For each: whether any part is in view, and how far it would have to move (in scene units, along x
+     * or y) to clear the left, right or bottom edge of the view; negative is the margin it has already.
+     */
+    bootView: (): { props: Record<string, PropInView>; cam: { t: number[]; r: number; fit: number } } | null => {
+      if (!desk) return null;
+      const c = newCam(), cam2 = new THREE.PerspectiveCamera(BOOT_FOV, W / H, 0.5, 120);
+      bootPose(W / H, phoneQ.matches, c);
+      cam2.position.setFromSpherical(new THREE.Spherical(c.radius, c.phi, c.theta)).add(c.target);
+      cam2.lookAt(c.target);
+      cam2.updateMatrixWorld(); cam2.updateProjectionMatrix();
+      const fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam2.projectionMatrix, cam2.matrixWorldInverse));
+      // the side planes by the way they face: the left edge's faces +x, the right's -x, the bottom's +y
+      const side = (axis: 'x' | 'y', sign: number) => fr.planes.reduce((a, p) => (p.normal[axis] * sign > a.normal[axis] * sign ? p : a));
+      const L = side('x', 1), R = side('x', -1), B = side('y', 1);
+      const v = new THREE.Vector3();
+      const need = (pts: Float32Array, p: THREE.Plane, axis: 'x' | 'y') => {
+        let worst = -Infinity;
+        for (let i = 0; i < pts.length; i += 3) worst = Math.max(worst, p.distanceToPoint(v.fromArray(pts, i)));
+        return +(worst / Math.abs(p.normal[axis])).toFixed(3);
+      };
+      const inView = (pts: Float32Array) => { for (let i = 0; i < pts.length; i += 3) if (fr.containsPoint(v.fromArray(pts, i))) return true; return false; };
+      clouds ??= Object.fromEntries(Object.entries({ ...desk.parts, ...ahead?.parts, lava: [lava.root] }).map(([k, p]) => [k, vertexCloud(p)]));
+      const out: Record<string, PropInView> = {};
+      for (const [label, pts] of Object.entries(clouds)) {
+        const u = new THREE.Box3().setFromArray(pts), r3 = (n: number) => +n.toFixed(2);
+        // (the desk's monitor replaces the boot set's, in the same place)
+        out[label] = { boot: label === 'lava' || label === 'monitor' || upFront.includes(label), seen: inView(pts), left: need(pts, L, 'x'), right: need(pts, R, 'x'), down: need(pts, B, 'y'), x: [r3(u.min.x), r3(u.max.x)], z: [r3(u.min.z), r3(u.max.z)], top: r3(u.max.y) };
+      }
+      return { props: out, cam: { t: c.target.toArray(), r: c.radius, fit: shotFit(W / H, phoneQ.matches) } };
+    },
     /** Replace one camera shot while tuning framing (debug only). */
     setShot: (i: number, s: { t: Vec3; o: Vec3; fov: number; sx: number; sy: number }, phone = false) => {
       (phone ? SHOTS.phone : SHOTS.wide)[i] = toShots([s])[0];

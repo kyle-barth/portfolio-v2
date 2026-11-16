@@ -20,7 +20,7 @@ pnpm build && pnpm start
 - `lib/scene/after-hours.ts`: the scene itself: lights, camera shots and glides, the monitor and laptop screens, hotspots.
 - `lib/scene/props/`: every prop, built in code from primitives; no model files.
   `index.ts` lays out the desk and merges the static parts by material, so the whole desk draws in a few calls.
-  - `desk.ts` (white standing desk, and a mat printed with liquid marble), `monitor.ts` (Gigabyte AORUS FO27Q3, from its measured spec: the thin
+  - `desk.ts` (white standing desk, 2000 x 800 mm, and a mat printed with liquid marble), `monitor.ts` (Gigabyte AORUS FO27Q3, from its measured spec: the thin
     QD-OLED panel and its chin, the faceted housing and light strip, and the leaning pillar on its
     two-legged base, the head slid down to the desk's height), `keyboard.ts`
     (Rama U80-A in Milk: solid top case with a cutout per key cluster, sculpted keycaps), `mouse.ts`
@@ -53,19 +53,30 @@ pnpm build && pnpm start
 
 - The page opens on the boot sequence. Before any JavaScript runs, `app/layout.tsx` marks the document
   as booting, and the CSS holds the page back and fades in the monitor's first frame as HTML. It sits at
-  the exact size and place the 3D monitor will take (the camera square on, level with the screen), in
-  the colours the scene renders it at, measured off the canvas. Once three.js is here and the fade has
+  the exact size and place the 3D monitor will take (the camera square on, level with the screen, the
+  screen filling 72% of the width, or 85% of the height on windows wider than about 2.1:1), in the
+  colours the scene renders it at, measured off the canvas. Once three.js is here and the fade has
   finished, the 3D monitor takes over in the dark, running a live boot log of what is loading: the
-  script size, then the desk going up a prop at a time (out of sight, all but the desk itself and the
-  lava lamp). Then the lamp switches on, flickering, and the room comes up round the monitor. It warms
+  script size, then the desk going up a prop at a time. Every prop it adds stands outside that square-on
+  view, on any window from 4:3 to about 2.1:1 (the desk is wide enough to put the pothos and the
+  printer just out of it), so nothing appears in the frame: they come into sight with the pull-back.
+  A portrait screen's view also takes in what is in front of the monitor, so there the keyboard, mouse
+  and chair go up first, a prop a frame behind the stand-in with their shaders compiling as the next
+  one builds, and the 3D monitor waits for them before it takes over: they are there from its first
+  frame, the keyboard just caught by the screen's glow. Then the lamp switches on, flickering, and the
+  room comes up round the monitor. It warms
   up with nothing else running: building, merging or compiling holds frames, which would stutter the
   lamp. The shaders compile once it is warm, the rest of the desk dissolves in (a still of the last
   frame laid over the canvas and faded out, hiding the frame its textures upload in), and the camera
-  pulls back to the shot for the section in view, the exposure opening up as it goes. Only then does the page come in: the heading, its lines, then the nav, on small staggered
-  delays. With
-  reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine ease (well under
-  half the top speed), and the page only fades in. If the scene stalls, the page is shown anyway after
-  15 seconds on screen.
+  pulls back to the shot for the section in view, the exposure opening up as it goes. Only then does
+  the page come in, each side from its own edge with no fading: the name slides in from the left, then
+  its lines and buttons on staggered delays, then the brand from the left and the nav from the right,
+  and the hint last (right-hand panels come from the right; the phone's dock rises from the bottom).
+  Each waits just past its edge (its own width plus the page margin), so it travels exactly as far as
+  it needs to. With reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine
+  ease (well under half the top speed), and the page still slides in (a deliberate choice: it is the one
+  piece of motion the page is built around; the smaller flourishes stop). If the scene
+  stalls, the page is shown anyway after 15 seconds on screen.
 - Every shader is compiled before the camera moves, a few at a time while the log runs, and the desk
   stays out of sight (an empty layer mask, lights included) until they are ready. Otherwise the first
   frame that draws something compiles its shader on the spot, and the boot log freezes or the pull-back
@@ -83,8 +94,10 @@ pnpm build && pnpm start
   camera shot) in the console. Handy when tuning framing, or when a background tab is not painting.
   `__slow(f)` (or `&slow=0.2`) runs the scene clock and the page's entrance at f times speed, to check
   motion. `__slow(0.0001)` then `__step(n)` steps through the boot frame by frame. `&motion=full` runs
-  the scene as if reduced motion were off, even when the OS asks for it. `__state()` reports the boot phase, the log
-  and the camera.
+  the scene and the page's own motion as if reduced motion were off, even when the OS asks for it
+  (`app/layout.tsx` marks the document before the first paint). `__state()` reports the boot phase, the log
+  and the camera. `__bootView()` reports which props the boot camera would see at the window's shape, and
+  how far each sits from the edge of its view (measured off their vertices, kept only with `?debug`).
 - Add `?lab=keyboard` (or `macbook`, `macbook-closed`, `mouse`, `pc`, `monitor`, `printer`, `printer-bare`, `chair`, `lava`,
   `tableware`) to see one prop on its own in studio light, for checking it against product photos
   (`lib/scene/lab.ts`, loaded only on that URL). `__labView(i)` jumps to a fixed view;

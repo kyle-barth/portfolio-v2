@@ -24,7 +24,12 @@ function leafGeometry() {
   return geo;
 }
 
-export function buildPothos() {
+/**
+ * Vine directions are angles round the pot (0 is +x, π/2 is +z, towards the room): `arch` for the
+ * vines that arch up and out, `trail` for the ones that trail over the rim and along the desk, each
+ * curling a little further round as it goes. The defaults suit a lamp standing to the plant's left.
+ */
+export function buildPothos({ arch = [-1.3, -0.25, 0.75, 1.55, 2.35], trail = [0.35, 1.2, 2.0] }: { arch?: number[]; trail?: number[] } = {}) {
   const g = new THREE.Group();
   g.name = 'pothos';
   const rand = seeded(11);
@@ -74,9 +79,8 @@ export function buildPothos() {
     leaf(p, o.clone().multiplyScalar(0.5 + rand() * 0.4).add(UP), o.clone().add(UP.clone().multiplyScalar(0.5 + rand() * 0.9)), 0.3 + rand() * 0.14);
   }
 
-  // vines: angles avoid -x, where the lava lamp stands
   const vines: { curve: THREE.CatmullRomCurve3; leaves: number; trailing: boolean }[] = [];
-  for (const a of [-1.3, -0.25, 0.75, 1.55, 2.35]) {
+  for (const a of arch) {
     const h = 0.55 + rand() * 0.45, reach = 0.3 + rand() * 0.25;
     vines.push({
       curve: new THREE.CatmullRomCurve3([at(a, 0.05, 0.54), at(a, 0.1, POT_TOP + h * 0.55), at(a, reach * 0.7, POT_TOP + h), at(a, reach * 1.1, POT_TOP + h * 0.8)]),
@@ -84,7 +88,7 @@ export function buildPothos() {
       trailing: false,
     });
   }
-  for (const a of [0.35, 1.2, 2.0]) {
+  for (const a of trail) {
     const run = 0.45 + rand() * 0.55;
     vines.push({
       curve: new THREE.CatmullRomCurve3([at(a, 0.12, 0.56), at(a, 0.38, POT_TOP + 0.08), at(a, 0.47, 0.42), at(a, 0.5, 0.12), at(a + 0.08, 0.56, 0.02), at(a + 0.2, 0.6 + run * 0.6, 0.02), at(a + 0.35, 0.6 + run, 0.02)]),

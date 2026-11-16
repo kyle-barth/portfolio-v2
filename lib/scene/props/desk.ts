@@ -1,4 +1,4 @@
-// A white sit-stand desk, 1600 x 800 mm at 720 mm, with a cloth desk mat printed with liquid marble.
+// A white sit-stand desk, 2000 x 800 mm at 720 mm, with a cloth desk mat printed with liquid marble.
 import * as THREE from 'three';
 import { box, canvasTexture, rbox, std } from './kit';
 
@@ -36,7 +36,9 @@ function marbleTexture() {
   });
 }
 
-export const DESK = { width: 10, depth: 5, floor: -4.5 };
+export const DESK = { width: 12.5, depth: 5, floor: -4.5 };
+/** The frame's legs, in from each end of the top. */
+const LEG_X = DESK.width / 2 - 1.1;
 
 export function buildDesk() {
   const g = new THREE.Group();
@@ -46,14 +48,14 @@ export function buildDesk() {
   const dark = std('#2a2c31', 0.5);
 
   rbox(g, DESK.width, 0.16, DESK.depth, 0.05, top, [0, -0.08, 0]);
-  box(g, 8.2, 0.2, 0.3, frame, [0, -0.26, -0.7]); // crossbar under the top
-  for (const x of [-3.9, 3.9]) {
+  box(g, 2 * LEG_X + 0.4, 0.2, 0.3, frame, [0, -0.26, -0.7]); // crossbar under the top
+  for (const x of [-LEG_X, LEG_X]) {
     box(g, 0.34, 0.18, 4.2, frame, [x, -0.25, 0]); // bracket along the depth
     rbox(g, 0.46, 1.9, 0.36, 0.04, frame, [x, -1.3, -0.7]); // upper stage of the column
     rbox(g, 0.56, 2.1, 0.46, 0.05, frame, [x, -3.27, -0.7]); // lower stage
     rbox(g, 0.5, 0.22, 4.3, 0.08, frame, [x, -4.39, -0.4]); // foot
   }
-  rbox(g, 0.9, 0.12, 0.3, 0.04, dark, [3.6, -0.22, 2.38]); // height controller under the front edge
+  rbox(g, 0.9, 0.12, 0.3, 0.04, dark, [LEG_X - 0.3, -0.22, 2.38]); // height controller under the front edge
   return g;
 }
 
