@@ -223,7 +223,7 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .shade { background: linear-gradient(180deg, rgba(7,10,18,0) 30%, rgba(7,10,18,.55) 52%, rgba(7,10,18,.92) 75%); }
   body[data-side="right"] .shade { transform: none; }
   .top { padding-top: calc(env(safe-area-inset-top, 0px) + 12px); padding-bottom: 12px; }
-  .top nav, .brand .name { display: none; }
+  .top nav { display: none; } /* the dock at the bottom takes over; the brand keeps the name */
   .shot, .shot.tall { min-height: 100svh; align-items: flex-end; justify-content: flex-start; padding-top: 46svh; padding-bottom: 110px; padding-left: var(--gl); padding-right: var(--gr); }
   .shot.right { justify-content: flex-start; }
   :root[data-boot="on"] .shot.right .panel { transform: translateX(var(--off-left)); }
