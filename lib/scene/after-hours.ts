@@ -5,7 +5,8 @@
 // the page brought in (onReveal). After that, each section has a camera shot; when the section in view
 // changes, the camera glides to the new shot on a timed ease (so scroll speed never makes it jump).
 // Dragging with a mouse turns the camera around the shot, and it eases back after a few idle seconds.
-// The monitor shows code, then the picked project, then a git log of jobs, then contact details.
+// The monitor shows code, then the picked project, then contact details; in the experience section,
+// where the camera turns to the laptop, the laptop runs a git log of jobs (otherwise a test run).
 // createAfterHours() builds it and tears it down.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
@@ -61,7 +62,10 @@ const RAW_SHOTS: Record<'wide' | 'phone', readonly { t: Vec3; o: Vec3; fov: numb
   ],
 };
 
-const MODES = ['code', 'project', 'log', 'contact'] as const;
+// What the monitor shows in each section. In the experience section the camera turns to the laptop, so
+// that is where the career log plays (LAPTOP_LOG); the monitor keeps the code up behind the panel.
+const MODES = ['code', 'project', 'code', 'contact'] as const;
+const LAPTOP_LOG = 2;
 type Mode = (typeof MODES)[number] | 'boot';
 type Phase = 'boot' | 'flight' | 'live'; // the boot log, the pull-back from the monitor, then the page
 
@@ -156,22 +160,41 @@ export function createAfterHours(o: AfterHoursOptions) {
   /* ---------- Monitor + laptop screens (canvas textures) ---------- */
   const SW = 1024, SH = 576; // 16:9, like the OLED panel
   const newCanvas = (w = SW, h = SH) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-  const scr = newCanvas();
-  const sx = scr.getContext('2d')!;
-  const snap = newCanvas();
-  const snapX = snap.getContext('2d')!;
-  const scrTex = new THREE.CanvasTexture(scr);
-  scrTex.colorSpace = THREE.SRGBColorSpace;
-  scrTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  // Screens are laid out in SW x SH units. The live screen (boot log, code, contact, a project's wipe)
+  // is drawn at 1x: it redraws many times a second and each redraw is a texture upload. A project at
+  // rest is a still, so it is drawn at SK times that, uploaded once, and shown in its place: on a
+  // desk-sized window the panel spans about 1500 device pixels, and at 1x its screenshot goes soft.
+  // Phones see the monitor smaller and keep 1x.
+  const SK = lowPower ? 1 : 2;
+  const screenCanvas = (k = 1) => {
+    const c = newCanvas(SW * k, SH * k), x = c.getContext('2d')!;
+    x.scale(k, k);
+    x.imageSmoothingQuality = 'high';
+    return [c, x] as const;
+  };
+  const screenTexture = (c: HTMLCanvasElement) => {
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  };
+  const [scr, sx] = screenCanvas();
+  const [snap, snapX] = screenCanvas();
+  const scrTex = screenTexture(scr);
+  const stillTex = screenTexture(newCanvas(1, 1)); // the project at rest, at SK x (see the loop)
   // the screens sit a hair in front of their bezels; pull them forward in depth so they never z-fight
   const ON_TOP = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   const screenMat = new THREE.MeshBasicMaterial({ map: scrTex, toneMapped: false, ...ON_TOP });
 
-  const LW = 512, LH = Math.round((LW * MACBOOK_SCREEN.h) / MACBOOK_SCREEN.w); // the MacBook's panel, 1.52:1
-  const lap = newCanvas(LW, LH);
+  // the MacBook's panel, 1.52:1, laid out in 512-wide units and drawn at twice that: in the experience
+  // shot it fills a third of the screen
+  const LW = 512, LH = Math.round((LW * MACBOOK_SCREEN.h) / MACBOOK_SCREEN.w), LS = 2;
+  const lap = newCanvas(LW * LS, LH * LS);
   const lx = lap.getContext('2d')!;
+  lx.scale(LS, LS);
   const lapTex = new THREE.CanvasTexture(lap);
   lapTex.colorSpace = THREE.SRGBColorSpace;
+  lapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const lapMat = new THREE.MeshBasicMaterial({ map: lapTex, color: 0x000000, toneMapped: false, ...ON_TOP });
 
   const C = { bg: '#0a0f1f', bar: '#121a33', gutter: '#3a4566', fg: '#d8def0', mute: '#5d6787', key: '#ffb869', str: '#a7e3b8', prop: '#8fd3ff', num: '#f59fb1' };
@@ -263,29 +286,35 @@ export function createAfterHours(o: AfterHoursOptions) {
   const hostOf = (p: Project) => p.domain || p.href.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
   function browserScreen(p: Project, im: HTMLImageElement) {
-    const c = newCanvas(), x = c.getContext('2d')!;
+    const [c, x] = screenCanvas(SK);
     x.fillStyle = C.bg; x.fillRect(0, 0, SW, SH);
     const h = SH - 46, s = Math.max(SW / im.naturalWidth, h / im.naturalHeight);
     x.drawImage(im, (SW - im.naturalWidth * s) / 2, 46, im.naturalWidth * s, im.naturalHeight * s);
     chrome(hostOf(p), x);
     return c;
   }
-  // A Windows app: its windows on a desktop, with a taskbar and a late-night clock.
+  // A Windows app on a desktop, with a taskbar and a late-night clock: its main window large, and a
+  // second (if it has one) smaller beside it, both standing on the same line.
   function desktopScreen(a: HTMLImageElement, b: HTMLImageElement | null) {
-    const c = newCanvas(), x = c.getContext('2d')!;
+    const [c, x] = screenCanvas(SK);
     const g = x.createLinearGradient(0, 0, SW, SH); g.addColorStop(0, '#0b1a36'); g.addColorStop(1, '#1b4a7e');
     x.fillStyle = g; x.fillRect(0, 0, SW, SH);
     const rg = x.createRadialGradient(SW * 0.72, SH * 0.2, 0, SW * 0.72, SH * 0.2, SW * 0.6);
     rg.addColorStop(0, 'rgba(120,170,255,.28)'); rg.addColorStop(1, 'rgba(120,170,255,0)');
     x.fillStyle = rg; x.fillRect(0, 0, SW, SH);
-    const wins = [a, b].filter((im): im is HTMLImageElement => !!im), wh = 470, gap = 40;
-    const ww = (im: HTMLImageElement) => im.naturalWidth * (wh / im.naturalHeight);
-    let left = (SW - wins.reduce((n, im) => n + ww(im), 0) - gap * (wins.length - 1)) / 2;
-    for (const im of wins) {
+    type Win = [HTMLImageElement, number]; // the window's screenshot and its height on the desktop
+    const wins: Win[] = [];
+    wins.push([a, 430]);
+    if (b) wins.push([b, 360]);
+    const base = 464, gap = 28; // the line the windows stand on
+    const ww = ([im, wh]: Win) => im.naturalWidth * (wh / im.naturalHeight);
+    let left = (SW - wins.reduce((n, w) => n + ww(w), 0) - gap * (wins.length - 1)) / 2;
+    for (const w of wins) {
+      const [im, wh] = w, top = base - wh;
       x.save(); x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 36; x.shadowOffsetY = 12;
-      roundRect(x, left, 28, ww(im), wh, 12); x.fillStyle = '#121721'; x.fill(); x.restore();
-      x.save(); roundRect(x, left, 28, ww(im), wh, 12); x.clip(); x.drawImage(im, left, 28, ww(im), wh); x.restore();
-      left += ww(im) + gap;
+      roundRect(x, left, top, ww(w), wh, 10); x.fillStyle = '#121721'; x.fill(); x.restore();
+      x.save(); roundRect(x, left, top, ww(w), wh, 10); x.clip(); x.drawImage(im, left, top, ww(w), wh); x.restore();
+      left += ww(w) + gap;
     }
     x.fillStyle = 'rgba(14,18,28,.94)'; x.fillRect(0, SH - 46, SW, 46);
     for (let i = 0; i < 5; i++) { x.fillStyle = i === 2 ? '#58a6ff' : 'rgba(220,230,255,.32)'; roundRect(x, SW / 2 - 110 + i * 46, SH - 36, 26, 26, 6); x.fill(); }
@@ -319,31 +348,11 @@ export function createAfterHours(o: AfterHoursOptions) {
   function drawProject(t: number) {
     const e = easeOut(Math.min(1, (t - projectAt) / WIPE));
     // the snapshot is whatever was on screen when this pick arrived, so a new pick mid-wipe continues from there
-    if (e < 1) sx.drawImage(snap, 0, 0); else { sx.fillStyle = C.bg; sx.fillRect(0, 0, SW, SH); }
+    if (e < 1) sx.drawImage(snap, 0, 0, SW, SH); else { sx.fillStyle = C.bg; sx.fillRect(0, 0, SW, SH); }
     const src = screenFor(activeProject);
-    if (src) { sx.save(); sx.beginPath(); sx.rect(0, 0, SW, SH * e); sx.clip(); sx.drawImage(src, 0, 0); sx.restore(); }
+    if (src) { sx.save(); sx.beginPath(); sx.rect(0, 0, SW, SH * e); sx.clip(); sx.drawImage(src, 0, 0, SW, SH); sx.restore(); }
     else chrome(hostOf(projects[activeProject]));
     if (e < 1) { sx.fillStyle = 'rgba(143,211,255,.9)'; sx.fillRect(0, SH * e - 2, SW, 3); }
-  }
-  function drawLog(t: number) {
-    sx.fillStyle = C.bg; sx.fillRect(0, 0, SW, SH); chrome('git log --oneline career');
-    sx.font = `500 24px ${MONO}`;
-    let y = 104;
-    sx.fillStyle = C.key; sx.fillText('$', 30, y); sx.fillStyle = C.fg; sx.fillText(`git log --oneline --since=${person.since}`, 58, y);
-    y += 58;
-    const hashes = ['a3f9c1e', '7be04d2', '19c6fa0'];
-    jobs.forEach((j, i) => {
-      const show = Math.min(1, Math.max(0, (t - modeAt) * 5 - i * 0.6));
-      if (show <= 0) return;
-      sx.globalAlpha = show;
-      sx.fillStyle = C.key; sx.fillText(hashes[i % hashes.length], 30, y);
-      sx.fillStyle = C.mute; sx.fillText(j.years.replace(' to ', '–'), 160, y);
-      sx.fillStyle = C.fg; sx.fillText(j.company, 360, y);
-      sx.fillStyle = C.prop; sx.font = `500 19px ${MONO}`; sx.fillText(j.role, 360, y + 30); sx.font = `500 24px ${MONO}`;
-      sx.globalAlpha = 1;
-      y += 92;
-    });
-    cursor(30, y, t);
   }
   function drawContact(t: number) {
     sx.fillStyle = C.bg; sx.fillRect(0, 0, SW, SH); chrome('zsh: say hi');
@@ -380,23 +389,54 @@ export function createAfterHours(o: AfterHoursOptions) {
     }
     if (bootSettled(t)) { sx.fillStyle = C.key; sx.fillText('$', 34, y); cursor(70, y, t); }
   }
-  function drawLaptop() {
-    lx.fillStyle = '#0b0d18'; lx.fillRect(0, 0, LW, LH);
+  /* ---------- The laptop: a test run, or in the experience section the career log ---------- */
+  // lapAt: when the laptop switched screens (it fades in); jobsAt: when the jobs start coming in, as
+  // the camera settles on the laptop
+  let lapLog = false, lapAt = -10, jobsAt = -10, lapDirty = true;
+  function drawTests() {
     lx.font = `500 17px ${MONO}`;
     const rows: [string, string][] = [
-      ['~/garage $ npm test', '#d8def0'], ['', ''], ['✓ joins a voice channel', '#a7e3b8'], ['✓ plays YouTube links inline', '#a7e3b8'],
-      ['✓ flags unread mentions', '#a7e3b8'], ['✓ saves custom emoji', '#a7e3b8'], ['', ''],
-      ['Tests  4 passed (4)', '#d8def0'], ['Time   1.21s', '#5d6787'],
+      ['~/garage $ npm test', C.fg], ['', ''], ['✓ joins a voice channel', C.str], ['✓ plays YouTube links inline', C.str],
+      ['✓ flags unread mentions', C.str], ['✓ saves custom emoji', C.str], ['', ''],
+      ['Tests  4 passed (4)', C.fg], ['Time   1.21s', C.mute],
     ];
     rows.forEach(([s, c], i) => { lx.fillStyle = c; lx.fillText(s, 22, 42 + i * 32); });
+  }
+  // the jobs come in one by one, newest first, each its hash, years, company, and the role under it
+  function drawCareer(t: number) {
+    lx.font = `500 17px ${MONO}`;
+    lx.fillStyle = C.fg; lx.fillText('~ $ git log --oneline --since=' + person.since, 22, 42);
+    const hashes = ['a3f9c1e', '7be04d2', '19c6fa0'];
+    let y = 92;
+    jobs.forEach((j, i) => {
+      const show = Math.min(1, Math.max(0, (t - jobsAt) * 5 - i * 0.6));
+      if (show <= 0) return;
+      lx.globalAlpha = show;
+      lx.font = `500 17px ${MONO}`;
+      lx.fillStyle = C.key; lx.fillText(hashes[i % hashes.length], 22, y);
+      lx.fillStyle = C.mute; lx.fillText(j.years.replace(' to ', '–'), 112, y);
+      lx.fillStyle = C.fg; lx.fillText(j.company, 222, y);
+      lx.fillStyle = C.prop; lx.font = `500 15px ${MONO}`; lx.fillText(j.role, 222, y + 24);
+      lx.globalAlpha = 1;
+      y += 64;
+    });
+    lx.font = `500 17px ${MONO}`;
+    lx.fillStyle = C.fg; lx.fillText('~ $', 22, y);
+    if (Math.floor(t * 2) % 2 === 0) { lx.fillStyle = C.key; lx.fillRect(62, y - 15, 9, 19); }
+  }
+  function drawLaptop(t: number) {
+    lx.fillStyle = '#0b0d18'; lx.fillRect(0, 0, LW, LH);
+    if (lapLog) drawCareer(t); else drawTests();
+    const fade = Math.min(1, (t - lapAt) / 0.15); // a quick fade in, like the monitor's
+    if (fade < 1) { lx.fillStyle = `rgba(5,7,13,${1 - fade})`; lx.fillRect(0, 0, LW, LH); }
     lapTex.needsUpdate = true;
   }
-  drawLaptop();
-  document.fonts?.load(`500 25px ${MONO}`).then(() => { if (disposed) return; screens.fill(null); dirty = true; drawLaptop(); });
+  drawLaptop(0);
+  document.fonts?.load(`500 25px ${MONO}`).then(() => { if (disposed) return; screens.fill(null); dirty = true; lapDirty = true; });
 
   function selectProject(i: number) {
     if (i === activeProject || i < 0 || i >= projects.length) return;
-    snapX.drawImage(scr, 0, 0);
+    snapX.drawImage(scr, 0, 0, SW, SH); // (the canvases are scaled: copy them at their layout size)
     activeProject = i; projectAt = time; dirty = true;
   }
 
@@ -740,7 +780,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   }
 
   /* ---------- Loop ---------- */
-  let lastDraw = -1;
+  let lastDraw = -1, lastLap = -1, lapBlink = 0, monBlink = 0;
   const glowTarget = new THREE.Color();
   function step(dt: number) {
     time += dt;
@@ -837,13 +877,28 @@ export function createAfterHours(o: AfterHoursOptions) {
     const m: Mode = phase === 'live' ? MODES[shotIdx] : 'boot';
     if (m !== mode) { mode = m; modeAt = t; dirty = true; }
     if (mode === 'code' && typed < codeLen) { typed = Math.min(codeLen, typed + dt * 38); dirty = true; }
-    // keep redrawing through the cross-fade into a mode, or a still project screen freezes half-faded
-    const animating = mode !== 'project' || t - projectAt < WIPE + 0.05 || t - modeAt < 0.25;
+    // Redraw only while something on it moves: the boot log, the typing, a project's wipe, the fade into
+    // a mode (or a still screen freezes half-faded), or the cursor's blink. Each redraw is a texture upload.
+    const blink = Math.floor(t * 2);
+    const animating = mode === 'boot' || t - modeAt < 0.25 || (mode === 'project' ? t - projectAt < WIPE + 0.05 : blink !== monBlink);
     if (t - lastDraw > 0.045 && (dirty || animating)) {
-      if (mode === 'boot') drawBoot(t); else if (mode === 'code') drawCode(t); else if (mode === 'project') drawProject(t); else if (mode === 'log') drawLog(t); else drawContact(t);
+      if (mode === 'boot') drawBoot(t); else if (mode === 'code') drawCode(t); else if (mode === 'project') drawProject(t); else drawContact(t);
       const fade = Math.min(1, (t - modeAt) / 0.15);
       if (fade < 1) { sx.fillStyle = `rgba(5,7,13,${1 - fade})`; sx.fillRect(0, 0, SW, SH); }
-      scrTex.needsUpdate = true; dirty = false; lastDraw = t;
+      scrTex.needsUpdate = true; dirty = false; lastDraw = t; monBlink = blink;
+    }
+    // A project at rest shows its own screen at SK x (uploaded once per pick); everything else, the
+    // wipe included, shows the 1x live screen.
+    const still = mode === 'project' && !animating && !dirty ? screenFor(activeProject) : null;
+    if (still && stillTex.image !== still) { stillTex.image = still; stillTex.needsUpdate = true; }
+    const shown = still ? stillTex : scrTex;
+    if (screenMat.map !== shown) screenMat.map = shown;
+    // the laptop: the career log while the experience section is in view (animating: the jobs come in,
+    // the cursor blinks), the test run otherwise
+    const wantLog = phase === 'live' && shotIdx === LAPTOP_LOG;
+    if (wantLog !== lapLog) { lapLog = wantLog; lapAt = t; jobsAt = Math.max(t, glideAt + glideDur * 0.7); lapDirty = true; }
+    if ((lapDirty || t - lapAt < 0.2 || (lapLog && (t - jobsAt < 0.8 || blink !== lapBlink))) && t - lastLap > 0.045) {
+      drawLaptop(t); lapDirty = false; lastLap = t; lapBlink = blink;
     }
     glowTarget.copy((mode === 'project' && glows[activeProject]) || SCREEN_GLOW);
     screenLight.color.lerp(glowTarget, 1 - Math.exp(-dt * 4));
