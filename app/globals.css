@@ -25,6 +25,8 @@ a { color: inherit; }
 :focus-visible { outline: 2px solid var(--lamp); outline-offset: 3px; border-radius: 6px; }
 
 #gl { position: fixed; inset: 0; width: 100%; height: 100lvh; display: block; z-index: 0; touch-action: pan-y; transition: opacity 200ms ease; }
+/* a still of the desk laid over it while the rest of the props come in (after-hours.ts) */
+.gl-copy { position: fixed; inset: 0; width: 100%; height: 100lvh; display: block; z-index: 0; pointer-events: none; }
 .shade { position: fixed; inset: 0; pointer-events: none; z-index: 1;
   background:
     linear-gradient(90deg, rgba(7,10,18,.8) 0%, rgba(7,10,18,.35) 34%, rgba(7,10,18,0) 55%),
@@ -148,34 +150,38 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
    and only then does the page come in: one entrance, the heading first, then its lines, then the
    chrome, on --ease-out with small uneven delays. layout.tsx sets data-boot before the first paint
    and desk-scene.tsx moves it on, so without JavaScript nothing is ever hidden. */
-/* The stand-in is the monitor's own first frame: its 1024×576 screen at the size and place the boot
-   camera shows it (bootPose: --fill of the viewport, centred), drawn in its units (--u = one canvas
-   pixel), so when the 3D monitor takes over the prompt doesn't move. */
+/* The stand-in is the monitor's own first frame: its screen (590.42 × 333.72 mm, the panel's active
+   area) at the size and place the square-on boot camera shows it (bootPose: --fill of the viewport,
+   centred), drawn in the 1024×576 canvas's units (--u across, --uy down: the canvas is stretched a
+   hair taller to fit the panel), so when the 3D monitor takes over nothing moves. It fades in; the 3D
+   monitor waits for that before it takes over (after-hours.ts). */
 .boot { --fill: .72; position: fixed; inset: 0 0 auto; height: 100vh; height: 100lvh; z-index: 20; display: grid; place-items: center; pointer-events: none;
   container-type: size; transition: opacity 240ms var(--ease-out), visibility 0s linear 240ms;
-  /* the monitor's palette as the desk renders it, measured off the canvas: the bloom pipeline tone-maps
-     the screen too (ACES at the boot exposure, 0.75), and the texture's filtering softens thin strokes,
-     so text reads dimmer than its colour; phones skip bloom, so there the panel colours come through as
-     drawn, though the smaller screen softens its text more */
-  background: var(--s-night); --s-night: #000002; --s-bg: #000107; --s-bar: #020518; --s-fg: #979aaa; --s-mute: #28314d; --s-key: #b17d41;
-  --s-red: #e56a65; --s-yellow: #dbc269; --s-green: #78cb90; }
+  /* the monitor's palette as the desk renders it square on, measured off the canvas (text: the cores of
+     its strokes): the bloom pipeline tone-maps the screen too (ACES at the boot exposure, 0.75); phones
+     skip bloom, so there the panel colours come through nearer as drawn; their small text thins out, so
+     it asks for a little more than it measures */
+  background: var(--s-night); --s-night: #000000; --s-bg: #000107; --s-bar: #020517; --s-fg: #c6c9d1; --s-mute: #424d70; --s-key: #dbb16d;
+  --s-red: #e36964; --s-yellow: #dac167; --s-green: #76ca8e; }
 @media (max-width: 760px), (max-aspect-ratio: 9/10) {
-  .boot { --fill: .94; --s-night: #010104; --s-bg: #0a0f1f; --s-bar: #121a33; --s-fg: #8b8f9e; --s-mute: #3c4460; --s-key: #a27748;
-    --s-red: #ff6b6b; --s-yellow: #ffcf5c; --s-green: #5ce08b; }
+  .boot { --fill: .94; --s-night: #010103; --s-bg: #0a0e1d; --s-bar: #11182f; --s-fg: #b2b7c8; --s-mute: #4d5877; --s-key: #cd9558;
+    --s-red: #df5e60; --s-yellow: #e0b653; --s-green: #51c57c; }
 }
-.boot-screen { --u: calc(100cqw / 1024); position: relative; container-type: inline-size; aspect-ratio: 3.72 / 2.09;
-  width: min(calc(var(--fill) * 100cqw), calc(var(--fill) * 100cqh * 3.72 / 2.09));
-  background: var(--s-bg); font-family: var(--font-mono), ui-monospace, monospace; font-weight: 500; line-height: 1; }
-.boot-bar { position: absolute; inset: 0 0 auto; height: calc(46 * var(--u)); background: var(--s-bar); }
-.boot-bar span { position: absolute; top: calc(16.5 * var(--u)); left: calc(19.5 * var(--u)); width: calc(13 * var(--u)); aspect-ratio: 1; border-radius: 50%; background: var(--s-red); }
+.boot-screen { --u: calc(100cqw / 1024); --uy: calc(var(--u) * 1.00487); position: relative; container-type: inline-size; aspect-ratio: 590.42 / 333.72;
+  width: min(calc(var(--fill) * 100cqw), calc(var(--fill) * 100cqh * 590.42 / 333.72));
+  background: var(--s-bg); font-family: var(--font-mono), ui-monospace, monospace; font-weight: 500; line-height: 1;
+  animation: boot-in calc(700ms * var(--slow, 1)) var(--ease-out) both; }
+@keyframes boot-in { from { opacity: 0; } }
+.boot-bar { position: absolute; inset: 0 0 auto; height: calc(46 * var(--uy)); background: var(--s-bar); }
+.boot-bar span { position: absolute; top: calc(16.5 * var(--uy)); left: calc(19.5 * var(--u)); width: calc(13 * var(--u)); height: calc(13 * var(--uy)); border-radius: 50%; background: var(--s-red); }
 .boot-bar span:nth-child(2) { left: calc(41.5 * var(--u)); background: var(--s-yellow); }
 .boot-bar span:nth-child(3) { left: calc(63.5 * var(--u)); background: var(--s-green); }
-.boot-bar em { position: absolute; inset: calc(11 * var(--u)) calc(110 * var(--u)) auto; height: calc(24 * var(--u)); border-radius: calc(12 * var(--u));
+.boot-bar em { position: absolute; inset: calc(11 * var(--uy)) calc(110 * var(--u)) auto; height: calc(24 * var(--uy)); border-radius: calc(12 * var(--u));
   display: grid; place-items: center; background: var(--s-bg); color: var(--s-mute); font-size: calc(15 * var(--u)); font-style: normal; white-space: pre; }
 /* line-height 1 puts the baseline .86em down, so this lands it on the canvas's y = 112 */
-.boot p { position: absolute; left: calc(34 * var(--u)); top: calc(84.5 * var(--u)); margin: 0; font-size: calc(32 * var(--u)); color: var(--s-fg); white-space: pre; }
+.boot p { position: absolute; left: calc(34 * var(--u)); top: calc(84.5 * var(--uy)); margin: 0; font-size: calc(32 * var(--u)); color: var(--s-fg); white-space: pre; }
 .boot b { display: inline-block; width: calc(36 * var(--u)); color: var(--s-key); font-weight: 500; }
-.boot i { display: inline-block; width: calc(13 * var(--u)); height: calc(28 * var(--u)); margin-left: .6em; vertical-align: -.19em; background: var(--s-key); animation: blink 1s steps(1) infinite; }
+.boot i { display: inline-block; width: calc(13 * var(--u)); height: calc(28 * var(--uy)); margin-left: .6em; vertical-align: -.19em; background: var(--s-key); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .boot.gone { opacity: 0; visibility: hidden; }
 :root:not([data-boot]) .boot { display: none; }
@@ -186,10 +192,12 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
 :root[data-boot="on"] :is(.hero h1, .hero .role, .hero .lede, .hero .actions) { opacity: 0; transform: translateY(18px); }
 :root[data-boot="on"] .top { transform: translateY(-8px); }
 :root[data-boot="on"] .hint i { animation: none; } /* its sweep starts once the hint is in */
-/* (--slow is 1 unless ?debug's __slow() is checking the motion in slow motion) */
+/* A fade, not a pop: the opacity starts gently and settles (a strong ease-out puts a 136 px heading at
+   80% within 200 ms), and the rise eases out a little longer under it.
+   (--slow is 1 unless ?debug's __slow() is checking the motion in slow motion) */
 :root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
-  transition: opacity calc(700ms * var(--slow, 1)) var(--ease-out), transform calc(800ms * var(--slow, 1)) var(--ease-out); }
-:root[data-boot="done"] .shade { transition-duration: calc(900ms * var(--slow, 1)); }
+  transition: opacity calc(900ms * var(--slow, 1)) cubic-bezier(.33, 0, .2, 1), transform calc(1100ms * var(--slow, 1)) cubic-bezier(.33, 1, .68, 1); }
+:root[data-boot="done"] .shade { transition-duration: calc(1000ms * var(--slow, 1)); }
 :root[data-boot="done"] .hero .role { transition-delay: calc(70ms * var(--slow, 1)); }
 :root[data-boot="done"] .hero .lede { transition-delay: calc(130ms * var(--slow, 1)); }
 :root[data-boot="done"] .hero .actions { transition-delay: calc(210ms * var(--slow, 1)); }
@@ -257,6 +265,7 @@ h2 { font-size: clamp(36px, 3.6vw, 48px); line-height: 1; font-weight: 700; lett
   .btn:active, .link-row:active, .dock a:active, .top nav a:active { transform: none; }
   .tip { scale: 1; }
   .boot i { animation: none; }
+  .boot-screen { animation-duration: calc(300ms * var(--slow, 1)); }
   :root[data-boot="on"] :is(.top, .hero h1, .hero .role, .hero .lede, .hero .actions) { transform: none; }
   :root[data-boot="done"] :is(.top, .dock, .hint, .shade, .shot:not(.hero) .panel, .hero h1, .hero .role, .hero .lede, .hero .actions) {
     transition: opacity 400ms ease; transition-delay: 0ms; }

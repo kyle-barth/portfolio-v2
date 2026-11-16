@@ -52,12 +52,17 @@ pnpm build && pnpm start
 ## Notes
 
 - The page opens on the boot sequence. Before any JavaScript runs, `app/layout.tsx` marks the document
-  as booting, and the CSS holds the page back and shows the monitor's first frame as HTML. It sits at the
-  exact size and place the 3D monitor will take, in the colours the scene renders it at. Once three.js
-  is here, the 3D monitor takes over and runs a live boot log of what is loading: the script size, the
-  desk going up a prop at a time, and shader compiles. When everything has loaded,
-  the lamp comes on and the camera pulls back from the monitor to the shot for the section in view. Only
-  then does the page come in: the heading, its lines, then the nav, on small staggered delays. With
+  as booting, and the CSS holds the page back and fades in the monitor's first frame as HTML. It sits at
+  the exact size and place the 3D monitor will take (the camera square on, level with the screen), in
+  the colours the scene renders it at, measured off the canvas. Once three.js is here and the fade has
+  finished, the 3D monitor takes over in the dark, running a live boot log of what is loading: the
+  script size, then the desk going up a prop at a time (out of sight, all but the desk itself and the
+  lava lamp). Then the lamp switches on, flickering, and the room comes up round the monitor. It warms
+  up with nothing else running: building, merging or compiling holds frames, which would stutter the
+  lamp. The shaders compile once it is warm, the rest of the desk dissolves in (a still of the last
+  frame laid over the canvas and faded out, hiding the frame its textures upload in), and the camera
+  pulls back to the shot for the section in view, the exposure opening up as it goes. Only then does the page come in: the heading, its lines, then the nav, on small staggered
+  delays. With
   reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine ease (well under
   half the top speed), and the page only fades in. If the scene stalls, the page is shown anyway after
   15 seconds on screen.
