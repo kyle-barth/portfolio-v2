@@ -63,29 +63,64 @@ pnpm build && pnpm start
   A portrait screen's view also takes in what is in front of the monitor, so there the keyboard, mouse
   and chair go up first, a prop a frame behind the stand-in with their shaders compiling as the next
   one builds, and the 3D monitor waits for them before it takes over: they are there from its first
-  frame, the keyboard just caught by the screen's glow. Then the lamp switches on, flickering, and the
-  room comes up round the monitor. It warms
-  up with nothing else running: building, merging or compiling holds frames, which would stutter the
-  lamp. The shaders compile once it is warm, the rest of the desk dissolves in (a still of the last
-  frame laid over the canvas and faded out, hiding the frame its textures upload in), and the camera
-  pulls back to the shot for the section in view, the exposure opening up as it goes. Only then does
-  the page come in, each side from its own edge with no fading: the name slides in from the left, then
-  its lines and buttons on staggered delays, then the brand from the left and the nav from the right,
+  frame, still dark (the room's light and its reflections in metal and glass are off until the lamp
+  comes on, so that frame is the screen alone, like the stand-in). Then the shaders compile, and the
+  rest of the desk is drawn once out of sight, from a camera that takes it all in: some GPUs (Apple's,
+  through Safari) only build a shader's pipeline, and every texture only uploads, the first time
+  something is drawn with it. That goes a sixth of the desk a frame, since each shader's first draw waits
+  for the GPU to catch up with everything queued before it (all at once, that held a frame for 160 ms
+  on a cold load). Only then does the lamp switch on, coming up smoothly (no flickers), and
+  the room comes up just behind it, round the monitor. It warms up with nothing else running: building,
+  merging, compiling or a first draw holds frames, which would stutter the lamp (its shadows are drawn
+  then too, with the whole desk in, while it is still off). Once it is warm the rest of the desk comes
+  in, which changes nothing on screen, since it is all out of view (only on windows wider than about
+  2.2:1, where the printer's edge is in view, does it dissolve in under a still of the last frame,
+  faded out: copying the frame out is a slow read-back on phones). Then the camera pulls back to the
+  shot for the section in view, the exposure opening up as it goes. Only then does the page come in,
+  each side from its own edge with no fading: the name slides in from the left, then its lines and
+  buttons on staggered delays, then the brand from the left and the nav from the right,
   and the hint last (right-hand panels come from the right; the phone's dock rises from the bottom).
   Each waits just past its edge (its own width plus the page margin), so it travels exactly as far as
   it needs to. With reduced motion on, the pull-back still plays, over the same 2.4 s on a gentler sine
   ease (well under half the top speed), and the page still slides in (a deliberate choice: it is the one
   piece of motion the page is built around; the smaller flourishes stop). If the scene
   stalls, the page is shown anyway after 15 seconds on screen.
-- Every shader is compiled before the camera moves, a few at a time while the log runs, and the desk
-  stays out of sight (an empty layer mask, lights included) until they are ready. Otherwise the first
+- Every shader is compiled before the lamp switches on, a few at a time while the log runs, and the desk
+  stays out of sight (an empty layer mask, lights included) until it has warmed up. Otherwise the first
   frame that draws something compiles its shader on the spot, and the boot log freezes or the pull-back
   stutters. With bloom, the scene renders into the renderer's half-float buffer, so shaders are compiled
   against a render target like it (`precompile` in `after-hours.ts`). The lamp's shadow pass is covered
   the same way.
+- Scrolling goes a section at a time, each landing at the top of the screen as its link would take it.
+  Touch, the keys and the scrollbar use CSS scroll snapping (`scroll-snap-stop` stops a fling at the next
+  section, and one taller than the screen scrolls freely to its end first). Mouse wheels and touchpads go
+  through `components/section-pager.tsx`, because browsers snap a short wheel or touchpad scroll back to
+  where it started: one gesture turns one page, or shows the rest of a tall section. Where a gesture
+  starts and ends comes from [wheel-gestures](https://github.com/xiel/wheel-gestures), which groups a
+  touchpad's coasting with the swipe that started it and spots a new swipe cutting it short (Chrome marks
+  coasting events itself; elsewhere it reads them off how the events slow down). A stall of a few frames
+  mid-coast makes it end the gesture early, so a gesture that starts mid-coast is taken as that coast
+  resuming, not a new swipe. Links to a section (`components/in-page-links.tsx`) scroll there without
+  adding a history entry, since Next's router reloads the page on history it doesn't recognise.
+- On touch screens the page scrolls inside `<main>`, a box the size of the screen, instead of the
+  document (`lib/page-scroll.ts`, and the matching query in `globals.css`). When the document scrolls, a
+  phone's browser slides its address and tool bars away and back, resizing the screen mid-scroll, and iOS
+  Safari lands the snap for one size, then jumps to correct it once the bars settle: every turn between
+  the intro and Work (where the bars come and go) stopped and then jumped. In the box the bars stay put.
+  Everything that reads the scroll position (the camera's stage, the nav, the pager, the glide, the links)
+  goes through `page-scroll.ts`.
+- A page turn (a wheel's, a section link's, a click on the desk) glides there over about 0.7 s, driven a
+  frame at a time by `lib/glide-scroll.ts` rather than by the browser's smooth scrolling, which is off
+  wherever the system turns animations off (Chrome on Windows with Animation effects off, Firefox with
+  smooth scrolling off, reduced motion) and there jumps a screen in one frame. Like the pull-back it runs
+  for everyone, slower with reduced motion on. Scroll snapping is off while it glides and back when it
+  lands; a wheel used mid-glide steers it, keeping its speed, and a touch, key or click stops it.
+- The monitor's project screenshots are decoded off the main thread (`createImageBitmap`), and the first
+  project's screen is drawn and uploaded a moment after the page lands. Done as Work came into view, the
+  decode, the draw and the upload held frames through the turn on a phone.
 - The camera glides to the next shot on a timed ease whenever the section in view changes, so scroll speed
-  never makes it jump. With reduced motion on, the glide is shorter and gentler, and the lamp flicker and
-  pointer parallax are off.
+  never makes it jump. With reduced motion on, the glide is shorter and gentler, and the lamp's slight
+  shimmer and the pointer parallax are off.
 - With a mouse or pen, click and drag the desk to turn the camera around the current shot (up to side-on,
   never behind the wall). Five seconds after letting go, or as soon as the section changes, it eases back
   to the shot. Touch is left alone so it still scrolls the page, and the hint is hidden on touch screens.

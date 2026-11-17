@@ -1,5 +1,7 @@
 import DeskScene from '@/components/desk-scene';
 import ProjectList from '@/components/project-list';
+import InPageLinks from '@/components/in-page-links';
+import SectionPager from '@/components/section-pager';
 import ScrollSpy from '@/components/scroll-spy';
 import { jobs, modelCredits, person, projects } from '@/data/content';
 
@@ -33,7 +35,7 @@ export default function Home() {
       </header>
 
       <main>
-        <section className="shot hero" id="intro" data-stage="">
+        <section className="shot hero" id="intro" data-stage="" tabIndex={-1}>
           <div className="panel">
             <h1>{person.name}</h1>
             <p className="role">
@@ -57,7 +59,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="shot tall work" id="work" data-stage="">
+        <section className="shot work" id="work" data-stage="" tabIndex={-1}>
           <div className="panel glass">
             <div className="work-head">
               <h2>Side projects</h2>
@@ -67,7 +69,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="shot tall right" id="experience" data-stage="">
+        <section className="shot right" id="experience" data-stage="" tabIndex={-1}>
           <div className="panel glass">
             <h2>Experience</h2>
             <ul className="jobs">
@@ -88,7 +90,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="shot contact" id="contact" data-stage="">
+        <section className="shot contact" id="contact" data-stage="" tabIndex={-1}>
           <div className="panel">
             <h2>Let&apos;s build something.</h2>
             <p className="sub">The coffee&apos;s still warm. LinkedIn is the quickest way to reach me.</p>
@@ -121,6 +123,8 @@ export default function Home() {
         <SectionLinks />
       </nav>
       <ScrollSpy />
+      <InPageLinks />
+      <SectionPager />
     </>
   );
 }

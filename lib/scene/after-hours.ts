@@ -1,7 +1,7 @@
 // The After Hours scene: Kyle's desk at night, lit by a lava lamp that switches on as the page opens.
 // It boots: the monitor is built first, close up, running a terminal that reports what is
 // loading (three.js, the desk prop by prop, the MacBook file, the shaders). When all of it is ready the
-// lava lamp flickers on and the camera pulls back from the monitor to the section's shot; only then is
+// lava lamp comes up and the camera pulls back from the monitor to the section's shot; only then is
 // the page brought in (onReveal). After that, each section has a camera shot; when the section in view
 // changes, the camera glides to the new shot on a timed ease (so scroll speed never makes it jump).
 // Dragging with a mouse turns the camera around the shot, and it eases back after a few idle seconds.
@@ -12,12 +12,14 @@ import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { Job, Person, Project } from '@/data/content';
+import { glideTo, pageTop } from '@/lib/glide-scroll';
+import { onScroll } from '@/lib/page-scroll';
 import { measureAnchors, stageAt } from '@/lib/scroll-stage';
 import { disposeTree } from './geometry';
 import { LAYOUT, MONITOR_SCREEN, UP_FRONT, buildAhead, buildBootSet, buildDeskScene, vertexCloud } from './props';
 import { MONITOR } from './props/monitor';
 import { MACBOOK_SCREEN } from './props/macbook';
-import { nightEnvironment } from './props/night-env';
+import { collectReflectors, nightEnvironment } from './props/night-env';
 import { MUG_RIM } from './props/tableware';
 import { DESK } from './props/desk';
 
@@ -96,7 +98,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   let anchors = measureAnchors(sections);
   let stage = stageAt(anchors);
   let pointerDirty = false;
-  on('scroll', () => { stage = stageAt(anchors); pointerDirty = true; }, { passive: true });
+  cleanups.push(onScroll(() => { stage = stageAt(anchors); pointerDirty = true; }));
   // section positions move when fonts swap or content reflows, not only on window resize; and a
   // scrollbar coming or going changes the canvas's width without one
   const ro = new ResizeObserver(() => {
@@ -133,7 +135,9 @@ export function createAfterHours(o: AfterHoursOptions) {
 
   RectAreaLightUniformsLib.init();
   // The room's own light (moonlight, a cool fill) is dark until the lava lamp switches on, and comes up
-  // with it: the boot opens on the screen alone in the dark, as the page's stand-in showed it.
+  // with it: the boot opens on the screen alone in the dark, as the page's stand-in showed it. So do the
+  // reflections of the night room in metal, glass and glaze (\`reflectors\`, filled as the desk goes up),
+  // or the keyboard in front of the monitor would show in the dark and appear as the stand-in hands over.
   const hemi = new THREE.HemisphereLight('#7887c2', '#06070c', 0.7);
   scene.add(hemi);
   const moon = new THREE.DirectionalLight('#7d93ff', 0.85);
@@ -143,7 +147,14 @@ export function createAfterHours(o: AfterHoursOptions) {
   fill.position.set(9, 5, 6);
   scene.add(fill);
   const roomLights = [hemi, moon, fill].map((l) => [l, l.intensity] as const);
-  const roomLevel = (k: number) => { for (const [l, full] of roomLights) l.intensity = full * k; };
+  const reflectors = new Set<THREE.MeshStandardMaterial>();
+  let roomAt = -1;
+  const roomLevel = (k: number) => {
+    if (k === roomAt) return;
+    roomAt = k;
+    for (const [l, full] of roomLights) l.intensity = full * k;
+    for (const m of reflectors) m.envMapIntensity = (m.userData.env as number) * k;
+  };
   roomLevel(0);
 
   // a dark wall behind the desk, so the lava lamp and the screens have something to glow against
@@ -257,11 +268,22 @@ export function createAfterHours(o: AfterHoursOptions) {
   const deskLine = bootLine('building the desk');
   let lampLine: ReturnType<typeof bootLine> | null = null; // added when the lamp switches on
 
-  // Each project's screen is rendered once into its own canvas, then wiped onto the monitor.
-  const shots: ([HTMLImageElement, HTMLImageElement | null] | null)[] = projects.map(() => null);
+  // Each project's screen is rendered once into its own canvas, then wiped onto the monitor. The
+  // screenshots are decoded off the main thread (createImageBitmap), so drawing one is a copy: an image
+  // decodes the first time it's drawn, on the main thread, and on a phone that held frames through the
+  // turn into Work.
+  type Pic = ImageBitmap | HTMLImageElement;
+  const size = (im: Pic) => ('naturalWidth' in im ? [im.naturalWidth, im.naturalHeight] : [im.width, im.height]);
+  const shots: ([Pic, Pic | null] | null)[] = projects.map(() => null);
   const screens: (HTMLCanvasElement | null)[] = projects.map(() => null);
   const glows: (THREE.Color | null)[] = projects.map(() => null);
-  const loadImg = (src: string) => new Promise<HTMLImageElement | null>((ok) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = src; });
+  const loadImg = async (src: string): Promise<Pic | null> => {
+    try {
+      const res = await fetch(src);
+      if (res.ok) return await createImageBitmap(await res.blob());
+    } catch { /* fall back to an image element */ }
+    return new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = src; });
+  };
   projects.forEach(async (p, i) => {
     const [a, b] = await Promise.all([loadImg(p.img), p.img2 ? loadImg(p.img2) : Promise.resolve(null)]);
     if (!a || disposed) return;
@@ -269,8 +291,9 @@ export function createAfterHours(o: AfterHoursOptions) {
     glows[i] = avgColor(a);
     screens[i] = null;
     dirty = true;
+    if (i === activeProject && warmDue) warmStill();
   });
-  function avgColor(im: HTMLImageElement) {
+  function avgColor(im: Pic) {
     const c = newCanvas(8, 8);
     const x = c.getContext('2d', { willReadFrequently: true })!;
     x.drawImage(im, 0, 0, 8, 8);
@@ -297,29 +320,29 @@ export function createAfterHours(o: AfterHoursOptions) {
   function cursor(x: number, y: number, t: number) { if (Math.floor(t * 2) % 2 === 0) { sx.fillStyle = C.key; sx.fillRect(x, y - 22, 13, 28); } }
   const hostOf = (p: Project) => p.domain || p.href.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-  function browserScreen(p: Project, im: HTMLImageElement) {
+  function browserScreen(p: Project, im: Pic) {
     const [c, x] = screenCanvas(SK);
     x.fillStyle = C.bg; x.fillRect(0, 0, SW, SH);
-    const h = SH - 46, s = Math.max(SW / im.naturalWidth, h / im.naturalHeight);
-    x.drawImage(im, (SW - im.naturalWidth * s) / 2, 46, im.naturalWidth * s, im.naturalHeight * s);
+    const [iw, ih] = size(im), h = SH - 46, s = Math.max(SW / iw, h / ih);
+    x.drawImage(im, (SW - iw * s) / 2, 46, iw * s, ih * s);
     chrome(hostOf(p), x);
     return c;
   }
   // A Windows app on a desktop, with a taskbar and a late-night clock: its main window large, and a
   // second (if it has one) smaller beside it, both standing on the same line.
-  function desktopScreen(a: HTMLImageElement, b: HTMLImageElement | null) {
+  function desktopScreen(a: Pic, b: Pic | null) {
     const [c, x] = screenCanvas(SK);
     const g = x.createLinearGradient(0, 0, SW, SH); g.addColorStop(0, '#0b1a36'); g.addColorStop(1, '#1b4a7e');
     x.fillStyle = g; x.fillRect(0, 0, SW, SH);
     const rg = x.createRadialGradient(SW * 0.72, SH * 0.2, 0, SW * 0.72, SH * 0.2, SW * 0.6);
     rg.addColorStop(0, 'rgba(120,170,255,.28)'); rg.addColorStop(1, 'rgba(120,170,255,0)');
     x.fillStyle = rg; x.fillRect(0, 0, SW, SH);
-    type Win = [HTMLImageElement, number]; // the window's screenshot and its height on the desktop
+    type Win = [Pic, number]; // the window's screenshot and its height on the desktop
     const wins: Win[] = [];
     wins.push([a, 430]);
     if (b) wins.push([b, 360]);
     const base = 464, gap = 28; // the line the windows stand on
-    const ww = ([im, wh]: Win) => im.naturalWidth * (wh / im.naturalHeight);
+    const ww = ([im, wh]: Win) => size(im)[0] * (wh / size(im)[1]);
     let left = (SW - wins.reduce((n, w) => n + ww(w), 0) - gap * (wins.length - 1)) / 2;
     for (const w of wins) {
       const [im, wh] = w, top = base - wh;
@@ -338,6 +361,23 @@ export function createAfterHours(o: AfterHoursOptions) {
     const s = shots[i];
     if (!screens[i] && s) screens[i] = projects[i].screen === 'desktop' ? desktopScreen(s[0], s[1]) : browserScreen(projects[i], s[0]);
     return screens[i];
+  }
+  // The project the monitor shows first, ready before anyone scrolls to it: its screen drawn, and uploaded
+  // as the still, a moment after the page lands, a frame for each, rather than in the middle of the turn
+  // into Work (on a phone, that held frames through the scroll and the camera's glide).
+  let warmDue = false;
+  function warmStill() {
+    warmDue = false;
+    requestAnimationFrame(() => {
+      if (disposed || !screenFor(activeProject)) { warmDue = !disposed; return; } // not loaded yet: when it is
+      requestAnimationFrame(() => {
+        const s = screens[activeProject];
+        if (disposed || !s || stillTex.image === s) return;
+        stillTex.image = s;
+        stillTex.needsUpdate = true;
+        renderer.initTexture(stillTex);
+      });
+    });
   }
 
   function drawCode(t: number) {
@@ -458,7 +498,15 @@ export function createAfterHours(o: AfterHoursOptions) {
   // the desk, its lamp and the monitor go up first; the lamp switches on while the rest builds
   const bootSet = buildBootSet({ reduce, lowPower, monitorScreen: screenMat, env: env.texture });
   const lava = bootSet.lava, bootMonitor = bootSet.monitor;
+  /** Its reflections come up with the room, from wherever the room is now (see roomLevel). */
+  const dimWithRoom = (root: THREE.Object3D) => {
+    collectReflectors(root, env.texture, reflectors);
+    const k = Math.max(0, roomAt);
+    roomAt = -1;
+    roomLevel(k);
+  };
   scene.add(bootSet.desk, bootMonitor);
+  dimWithRoom(bootSet.desk); dimWithRoom(bootMonitor);
   let desk: Awaited<ReturnType<typeof buildDeskScene>> | null = null;
   const nextFrame = () => new Promise<void>((ok) => requestAnimationFrame(() => ok()));
   let deskParts = 0;
@@ -481,6 +529,7 @@ export function createAfterHours(o: AfterHoursOptions) {
         const a = await buildAhead(upFront, { monitorScreen: screenMat, laptopScreen: lapMat, env: env.texture, yieldFrame: nextFrame, prepare, measure: o.debug });
         if (disposed) return;
         scene.add(a.root);
+        dimWithRoom(a.root);
         lava.light.shadow.needsUpdate = true; // they cast shadows too
         ahead = a;
       } finally {
@@ -500,6 +549,7 @@ export function createAfterHours(o: AfterHoursOptions) {
       // stands in for its monitor meanwhile. The lamp's shadow pass waits for the unveiling as well.
       veil(d.root);
       scene.add(d.root);
+      dimWithRoom(d.root);
       deskLine.done(`${deskParts} props`);
       return d;
     });
@@ -512,6 +562,43 @@ export function createAfterHours(o: AfterHoursOptions) {
     root.traverse((o) => { if (o.layers.mask) { ((o as THREE.Light).isLight ? veiledLights : veiled).push([o, o.layers.mask]); o.layers.mask = 0; } });
   }
   function lightsIn(on: boolean) { for (const [l, mask] of veiledLights) l.layers.mask = on ? mask : 0; }
+  /**
+   * Everything still out of sight, drawn once where it can't be seen (the frame's own draw covers it).
+   * Compiling a shader is not all of its cost: some GPUs (Apple's, through Safari) build the pipeline it
+   * draws with, and every texture uploads, only the first time something is drawn with it, so that
+   * would otherwise land in the lamp's warm-up or as the desk comes in. A wide camera takes in the
+   * whole desk. It goes a share of the desk a frame: the first time a shader draws, three reads its log
+   * and uniforms back from the GPU, and each read waits for everything queued ahead of it (the textures
+   * uploading, their mipmaps, links), so the whole desk at once held one frame for 160 ms on a cold
+   * load, the log stopped. The lamp's shadows go last, with all of it in: the lamp is still off, and
+   * what the desk shades as the lamp comes up is out of the boot camera's view, so they need no redraw.
+   */
+  const FIRST_DRAW_SHARES = 6;
+  const wideCam = new THREE.PerspectiveCamera(75, 1, 0.5, 120);
+  wideCam.position.set(0, 14, 22);
+  wideCam.lookAt(0, 0, 0);
+  function drawUnseen(part: [THREE.Object3D, number][], shadows: boolean) {
+    wideCam.aspect = W / H;
+    wideCam.updateProjectionMatrix();
+    lightsIn(true);
+    for (const [o, mask] of part) o.layers.mask = mask;
+    if (shadows) lava.light.shadow.needsUpdate = true;
+    try {
+      renderer.render(scene, wideCam);
+    } finally {
+      for (const [o] of part) o.layers.mask = 0;
+      lightsIn(false);
+    }
+  }
+  // the loop takes one a frame, before the frame's own draw (which covers it)
+  const firstDraws: (() => void)[] = [];
+  let firstDrawn: (() => void) | null = null;
+  const firstDraw = () => new Promise<void>((ok) => {
+    const all = veiled.slice(), share = Math.max(1, Math.ceil(all.length / FIRST_DRAW_SHARES));
+    for (let i = 0; i < all.length; i += share) { const part = all.slice(i, i + share); firstDraws.push(() => drawUnseen(part, false)); }
+    firstDraws.push(() => drawUnseen(all, true));
+    firstDrawn = ok;
+  });
   /** The rest of the desk comes into sight, its monitor in place of the boot one (same place, no seam). */
   function unveil() {
     lightsIn(true);
@@ -657,7 +744,10 @@ export function createAfterHours(o: AfterHoursOptions) {
     }
   }
   // a drag that ends on a hotspot is not a click on it
-  const onCanvasClick = () => { if (hover?.to && look.moved < 6) document.querySelector(hover.to)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); };
+  const onCanvasClick = () => {
+    const to = hover?.to && look.moved < 6 ? document.querySelector(hover.to) : null;
+    if (to) glideTo(pageTop(to));
+  };
   canvas.addEventListener('click', onCanvasClick);
   cleanups.push(() => canvas.removeEventListener('click', onCanvasClick));
 
@@ -785,21 +875,24 @@ export function createAfterHours(o: AfterHoursOptions) {
   }
 
   // lampAt: when the lamp switches on; flightAt: when the camera starts pulling back.
-  // The lamp warms up in a quiet window. Building a prop, merging the desk or linking a batch of shaders
-  // each holds a frame for tens of milliseconds on an everyday laptop (hundreds for the merge), and any
-  // of those inside the warm-up shows as the lamp stuttering, or swallows its flicker. So it switches on
-  // once the desk is built, the shaders compile only once it has warmed up, and the rest of the desk
-  // (whose first frame uploads its textures) dissolves in under a still after that.
-  let lampAt = -1, flightAt = -1;
+  // The lamp warms up in a quiet window. Building a prop, merging the desk, linking a batch of shaders
+  // or drawing something for the first time each holds a frame for tens of milliseconds on an everyday
+  // laptop (hundreds on a phone), and any of those inside the warm-up shows as the lamp's rise
+  // stuttering. So all of it happens first, while the log runs: the desk is built, its shaders
+  // compile, and it is drawn once out of sight, a share a frame (drawUnseen). Only then does the lamp
+  // switch on (deskReady), with nothing else to do, and once it is warm the rest of the desk comes in.
+  let lampAt = -1, flightAt = -1, deskReady = false;
   let lampWarmed = () => {};
   const lampWarm = new Promise<void>((ok) => { lampWarmed = ok; });
   deskBuilt
-    .then(() => lampWarm)
     .then(() => {
       if (disposed) return;
       const shaders = bootLine('compiling shaders');
       return precompile(lava.light, (n) => shaders.set(`${n} programs`)).then(() => shaders.done(`${renderer.info.programs?.length ?? 0} programs`));
     })
+    .then(() => (disposed ? undefined : firstDraw()))
+    .then(() => { deskReady = true; })
+    .then(() => lampWarm)
     .then(() => {
       if (disposed || !desk) return;
       unveilDue = true; // the loop brings the rest of the desk in, dissolving it into the lit room
@@ -812,39 +905,35 @@ export function createAfterHours(o: AfterHoursOptions) {
       if (!revealed) { revealed = true; o.onReveal(); }
     });
 
-  // The one orchestrated moment: the bulb catches with two flickers, then the lamp warms up (LAMP_WARM).
-  function lampLevel(e: number) {
-    if (e < 0) return 0;
-    if (reduce) return Math.min(1, e / 0.5);
-    if (e < 0.05) return 0.45;
-    if (e < 0.1) return 0.05;
-    if (e < 0.16) return 0.6;
-    if (e < 0.22) return 0.2;
-    return 0.2 + 0.8 * easeOut(Math.min(1, (e - 0.22) / 1.2));
-  }
+  // The one orchestrated moment: the lamp comes up smoothly, no flickers, a little ahead of the room it
+  // lights (up over LAMP_RISE; the room over LAMP_WARM), so its glow reveals the desk.
+  const LAMP_RISE = reduce ? 0.5 : 1.1;
+  const lampLevel = (e: number) => (e < 0 ? 0 : easeInOutSine(Math.min(1, e / LAMP_RISE)));
   const LAMP_WARM = reduce ? 0.5 : 1.42;
-  // A subtle, living flicker: layered slow waves, plus a rare brief dip.
-  let nextDip = 6, dipAt = -10;
-  function flicker(t: number) {
+  // Once it is up, a slight living shimmer: layered slow waves of a few percent, easing in.
+  function shimmer(t: number, e: number) {
     if (reduce) return 1;
     const n = Math.sin(t * 9.7) * 0.5 + Math.sin(t * 15.3 + 1.3) * 0.3 + Math.sin(t * 4.1 + 0.7) * 0.2;
-    let f = 1 + n * 0.03;
-    if (t > nextDip) { dipAt = t; nextDip = t + 5 + Math.random() * 8; }
-    const d = t - dipAt;
-    if (d < 0.2) f *= d < 0.05 ? 0.88 : d < 0.1 ? 1 : d < 0.15 ? 0.93 : 1;
-    return f;
+    return 1 + n * 0.03 * THREE.MathUtils.smoothstep(e, LAMP_WARM, LAMP_WARM + 1.5);
   }
 
   /*
-   * Bringing the rest of the desk in. By now the lamp is lighting the room, so props appearing all at
-   * once would pop: the last frame without them is copied into a canvas over the scene, they come in
-   * underneath, and the copy fades away (an opacity transition, so it runs smoothly whatever the first
-   * frames with the new props cost). The pull-back waits for it.
+   * Bringing the rest of the desk in, once the lamp is warm. It is all out of the boot camera's view on
+   * any window up to about 2.2:1, portrait screens included (see bootView), its shaders and textures
+   * are ready and its shadows are in (drawUnseen), so it simply comes in: nothing on screen
+   * changes. Only on a wider window, where the printer's edge is in view, would that pop, so there the
+   * last frame without it is copied into a canvas over the scene, it comes in underneath, and the copy
+   * fades away. (Not everywhere: copying the frame out is a slow read-back on some GPUs, phones'
+   * especially, and it would land just as the lamp comes up.) The pull-back waits as long either way.
    */
   const XFADE = reduce ? 0.3 : 0.6;
   let unveilDue = false, unveiledAt = -1;
+  const lateInBootView = () => !phoneQ.matches && W / H > 2.2;
   function unveilUnderCopy() {
     unveilDue = false;
+    unveiledAt = time;
+    loaded = true; // step() starts the pull-back once XFADE has passed and the last line has been read
+    if (!lateInBootView()) { unveil(); return; }
     const copy = document.createElement('canvas');
     copy.className = 'gl-copy';
     copy.width = canvas.width; copy.height = canvas.height;
@@ -852,9 +941,6 @@ export function createAfterHours(o: AfterHoursOptions) {
     copy.style.transition = `opacity ${Math.round((XFADE / timeScale) * 1000)}ms ease`;
     canvas.after(copy);
     unveil();
-    lava.light.shadow.needsUpdate = true; // its shadows again, now that the whole desk casts them
-    unveiledAt = time;
-    loaded = true; // step() starts the pull-back once this has faded and the last line has been read
     requestAnimationFrame(() => requestAnimationFrame(() => { copy.style.opacity = '0'; }));
     copy.addEventListener('transitionend', () => copy.remove(), { once: true });
     cleanups.push(() => copy.remove());
@@ -872,7 +958,7 @@ export function createAfterHours(o: AfterHoursOptions) {
 
     // The lamp switches on once the 3D monitor has taken over and the desk is built (see lampWarm).
     // boot -> flight: everything has loaded, the lamp is warm, and the last line of the log has been read.
-    if (lampAt < 0 && desk && handedAt >= 0 && t - handedAt > (reduce ? 0.15 : 0.35)) { lampAt = t; lampLine = bootLine('switching on the lava lamp'); }
+    if (lampAt < 0 && deskReady && handedAt >= 0 && t - handedAt > (reduce ? 0.15 : 0.35)) { lampAt = t; lampLine = bootLine('switching on the lava lamp'); }
     const e = lampAt < 0 ? -1 : t - lampAt;
     if (e >= LAMP_WARM && !lampOn) { lampOn = true; lampLine?.done('on'); lampWarmed(); }
     const last = bootLines[bootLines.length - 1];
@@ -886,12 +972,12 @@ export function createAfterHours(o: AfterHoursOptions) {
     }
 
     const L = lampLevel(e);
-    // the room comes into view with the lamp: dark at first, then up as the lamp warms (not its flickers)
+    // the room comes into view with the lamp: dark at first, then up just behind it as it warms
     const room = e < 0 ? 0 : easeInOutSine(Math.min(1, e / LAMP_WARM));
     roomLevel(room);
     const f = flightAt < 0 ? -1 : t - flightAt;
     const SL = f < 0.45 ? 0 : easeOut(Math.min(1, (f - 0.45) / 0.3)); // the laptop wakes as the camera leaves
-    lava.update(t, L, e > 1.5 ? flicker(t) : 1);
+    lava.update(t, L, e < 0 ? 1 : shimmer(t, e));
     lapMat.color.setScalar(SL * 0.95);
     // The exposure holds through the boot, so the screen keeps the stand-in's look while the lamp lights
     // the room round it, and opens up as the camera pulls back.
@@ -930,6 +1016,7 @@ export function createAfterHours(o: AfterHoursOptions) {
         ready = true;
         pointerDirty = true;
         if (!revealed) { revealed = true; o.onReveal(); }
+        setTimeout(warmStill, 600); // once the page has started coming in
       }
     }
 
@@ -1018,6 +1105,7 @@ export function createAfterHours(o: AfterHoursOptions) {
   fadeIn?.finished.then(() => { fadedIn = true; }, () => { fadedIn = true; });
   renderer.setAnimationLoop(() => {
     timer.update();
+    if (firstDraws.length) { firstDraws.shift()!(); if (!firstDraws.length) { firstDrawn?.(); firstDrawn = null; } }
     step(Math.min(timer.getDelta(), 0.05) * timeScale);
     if (handedAt < 0 && ++frames >= 2 && fadedIn && aheadIn) { boot.root.classList.add('gone'); handedAt = time; }
     if (unveilDue) unveilUnderCopy();

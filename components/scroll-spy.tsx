@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { onScroll } from '@/lib/page-scroll';
 import { measureAnchors, stageAt } from '@/lib/scroll-stage';
 
 /** Marks the nav link for the section in view, and tells the CSS which side the panel is on. */
@@ -27,12 +28,12 @@ export default function ScrollSpy() {
 
     const ro = new ResizeObserver(remeasure);
     ro.observe(document.body);
-    window.addEventListener('scroll', update, { passive: true });
+    const unScroll = onScroll(update);
     window.addEventListener('resize', remeasure);
     update();
     return () => {
       ro.disconnect();
-      window.removeEventListener('scroll', update);
+      unScroll();
       window.removeEventListener('resize', remeasure);
     };
   }, []);

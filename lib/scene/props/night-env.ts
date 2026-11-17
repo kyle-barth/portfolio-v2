@@ -29,6 +29,17 @@ export function nightEnvironment(renderer: THREE.WebGLRenderer) {
   return target;
 }
 
+/** Add every material under `root` that reflects `env` to `into` (so their reflections can be dimmed). */
+export function collectReflectors(root: THREE.Object3D, env: THREE.Texture, into: Set<THREE.MeshStandardMaterial>) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if ((mat as THREE.MeshStandardMaterial).envMap === env) into.add(mat as THREE.MeshStandardMaterial);
+    }
+  });
+}
+
 /** Hand the environment to every material marked with `reflective()` under `root`. */
 export function applyReflections(root: THREE.Object3D, env: THREE.Texture) {
   root.traverse((o) => {
