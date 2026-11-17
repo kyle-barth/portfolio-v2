@@ -6,10 +6,16 @@ a lava lamp switches on as the page opens, and a Bambu Lab P2S prints in the cor
 
 ## Run it
 
+Node 26 (`engines` in `package.json`, which Vercel builds with too) and pnpm 10; `pnpm-lock.yaml` is the
+only lockfile. Next 16 (Turbopack), React 19, TypeScript 6 (7 has no compiler API for Next's type-check
+or typescript-eslint yet) and ESLint 10, which Next's config runs on, though three of its plugins haven't
+declared it yet (allowed under `pnpm.peerDependencyRules`).
+
 ```bash
 pnpm install
 pnpm dev      # http://localhost:3000
 pnpm build && pnpm start
+pnpm lint
 ```
 
 ## Where things live
