@@ -122,10 +122,10 @@ export const projects: Project[] = [
   {
     key: 'backtrack',
     title: 'Backtrack',
-    domain: 'github.com/kyle-barth/backtrack',
+    domain: 'backtrackclips.app',
     kind: 'Game clips for Windows',
-    href: 'https://github.com/kyle-barth/backtrack',
-    linkLabel: 'Get Backtrack on GitHub',
+    href: 'https://backtrackclips.app/',
+    linkLabel: 'Open backtrackclips.app',
     img: '/projects/backtrack.webp',
     screen: 'desktop',
     blurb:
