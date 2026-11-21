@@ -127,7 +127,7 @@ export const projects: Project[] = [
     href: 'https://backtrackclips.app/',
     linkLabel: 'Open backtrackclips.app',
     img: '/projects/backtrack.webp',
-    screen: 'desktop',
+    screen: 'browser',
     blurb:
       'A free, open-source alternative to SteelSeries GG Moments. It records your game on the GPU for about 1% CPU, saves the last minute as a clip when you press Alt+S, and exports a copy under 10 MB that pastes straight into Discord.',
     tech: ['Rust', 'Tauri', 'FFmpeg', 'Windows'],
