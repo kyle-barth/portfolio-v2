@@ -98,7 +98,7 @@ export const jobs: Job[] = [
   },
 ];
 
-// Order matters: Garage is the featured build, Vitals second, then earlier experiments.
+// Order matters: Garage is the featured build, Backtrack second, then Vitals and earlier experiments.
 export const projects: Project[] = [
   {
     key: 'garage',
@@ -118,6 +118,19 @@ export const projects: Project[] = [
       'A desktop app with its own installers and update feed',
     ],
     tech: ['Next.js', 'React', 'TypeScript', 'Supabase', 'LiveKit', 'Electron'],
+  },
+  {
+    key: 'backtrack',
+    title: 'Backtrack',
+    domain: 'github.com/kyle-barth/backtrack',
+    kind: 'Game clips for Windows',
+    href: 'https://github.com/kyle-barth/backtrack',
+    linkLabel: 'Get Backtrack on GitHub',
+    img: '/projects/backtrack.webp',
+    screen: 'desktop',
+    blurb:
+      'A free, open-source alternative to SteelSeries GG Moments. It records your game on the GPU for about 1% CPU, saves the last minute as a clip when you press Alt+S, and exports a copy under 10 MB that pastes straight into Discord.',
+    tech: ['Rust', 'Tauri', 'FFmpeg', 'Windows'],
   },
   {
     key: 'vitals',
@@ -162,16 +175,6 @@ export const projects: Project[] = [
     screen: 'browser',
     blurb: 'Renders the Mandelbrot set in the browser without blocking the UI, by splitting the work across web workers.',
     tech: ['SvelteKit', 'Web Workers', 'Tailwind', 'Vercel'],
-  },
-  {
-    key: 'emojiboard',
-    title: 'emojiboard',
-    kind: 'A bad idea, done well',
-    href: 'https://emojiboard.kyle-barth.vercel.app/',
-    img: '/projects/emojiboard.webp',
-    screen: 'browser',
-    blurb: 'An awful idea that was funny to make: every letter becomes the emoji that looks most like it.',
-    tech: ['Svelte', 'Snowpack', 'Tailwind', 'Vercel'],
   },
 ];
 
